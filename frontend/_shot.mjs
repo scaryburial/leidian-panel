@@ -1,0 +1,16 @@
+import { chromium } from 'playwright';
+const b = await chromium.launch();
+const pg = await b.newPage({ viewport: { width: 1440, height: 900 } });
+const base = 'http://127.0.0.1:33441/ui3344/';
+await pg.goto(base, { waitUntil: 'domcontentloaded', timeout: 20000 }).catch(()=>{});
+await pg.waitForTimeout(2500);
+await pg.fill('input[autocomplete="username"]', '3344').catch(()=>{});
+await pg.fill('input[autocomplete="current-password"]', '3344').catch(()=>{});
+await pg.click('button[type="submit"]').catch(()=>{});
+await pg.waitForTimeout(4500);
+await pg.screenshot({ path: '/root/3x-ui/frontend/_shot/home.png' });
+await pg.goto(base + 'panel/clients', { waitUntil: 'domcontentloaded', timeout: 20000 }).catch(()=>{});
+await pg.waitForTimeout(3500);
+await pg.screenshot({ path: '/root/3x-ui/frontend/_shot/clients.png' });
+await b.close();
+console.log('done');

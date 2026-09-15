@@ -24,15 +24,15 @@
 .panel-bg-scrim {
   position: absolute;
   inset: 0;
-  background: rgba(8, 10, 18, 0.5);
+  background: rgba(8, 10, 18, 0.35);
 }
 
 body.light .panel-bg-scrim {
-  background: rgba(244, 246, 251, 0.42);
+  background: rgba(244, 246, 251, 0.30);
 }
 
 html[data-theme='ultra-dark'] .panel-bg-scrim {
-  background: rgba(0, 0, 0, 0.68);
+  background: rgba(0, 0, 0, 0.55);
 }
 
 @media (prefers-reduced-motion: reduce) {

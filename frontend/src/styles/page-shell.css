@@ -244,3 +244,10 @@ body.dark .ant-dropdown-menu-item-divider {
   position: relative;
   z-index: 1;
 }
+
+/* Moderate transparency: let the panel background show through cards. */
+.ant-card {
+  background: color-mix(in srgb, var(--ant-color-bg-container) 84%, transparent) !important;
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+}
