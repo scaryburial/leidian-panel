@@ -426,3 +426,25 @@ body.dark .ant-drawer-body .drawer-menu .ant-menu-item-group-list {
 .sidebar-command-trigger {
   border-radius: 10px;
 }
+
+/* icons: unify line style, larger, hover color + subtle motion */
+.sider-nav .ant-menu-item .anticon,
+.sider-nav .ant-menu-submenu-title .anticon,
+.sider-utility .ant-menu-item .anticon {
+  font-size: 18px;
+  line-height: 1;
+  transition: transform 0.18s ease, color 0.18s ease, filter 0.18s ease;
+}
+
+.sider-nav .ant-menu-item:hover .anticon,
+.sider-nav .ant-menu-submenu-title:hover .anticon,
+.sider-utility .ant-menu-item:hover .anticon {
+  transform: scale(1.12);
+  color: var(--ant-color-primary);
+}
+
+.sider-nav .ant-menu-item-selected .anticon,
+.sider-utility .ant-menu-item-selected .anticon {
+  transform: scale(1.06);
+  filter: drop-shadow(0 0 6px color-mix(in srgb, #ffffff 55%, transparent));
+}
