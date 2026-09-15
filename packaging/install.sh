@@ -36,6 +36,25 @@ fi
 
 PORT=$("$APP/ui3344" setting -show true 2>/dev/null | grep -Eo 'port: .+' | awk '{print $2}')
 WBP=$("$APP/ui3344" setting -show true 2>/dev/null | grep -Eo 'webBasePath: .+' | awk '{print $2}')
+
+# 生成自签证书（供 VMess-TLS 档使用）
+if command -v openssl >/dev/null 2>&1; then
+  install -d -m 700 /root/cert/ui3344-selfsigned
+  if [ ! -f /root/cert/ui3344-selfsigned/fullchain.pem ]; then
+    openssl req -x509 -newkey rsa:2048 -nodes \
+      -keyout /root/cert/ui3344-selfsigned/privkey.pem \
+      -out /root/cert/ui3344-selfsigned/fullchain.pem \
+      -days 3650 -subj "/CN=ui3344" >/dev/null 2>&1 || true
+  fi
+fi
+
+# 创建预设协议（9 个入站）；可用 UI3344_SKIP_PRESETS=1 跳过
+if [ "${UI3344_SKIP_PRESETS:-0}" != "1" ] && command -v python3 >/dev/null 2>&1 && [ -f "$HERE/create-inbounds.py" ]; then
+  echo "> 创建预设协议(9 个入站)…"
+  sleep 2
+  UI3344_URL="http://127.0.0.1:${PORT:-33441}${WBP:-/ui3344/}" python3 "$HERE/create-inbounds.py" || echo "! 预设创建失败，可稍后手动运行 create-inbounds.py"
+fi
+
 echo "========================================"
 echo " 安装完成"
 echo " 管理命令 : ui3344"

@@ -369,3 +369,60 @@ body.dark .ant-drawer-body .drawer-menu .ant-menu-item-group-list {
   background-color: color-mix(in srgb, var(--ant-color-primary) 10%, transparent) !important;
   color: var(--ant-color-primary) !important;
 }
+
+/* ---- ui3344 custom: modern / tech sidebar ---- */
+.ant-sidebar > .ant-layout-sider {
+  background: color-mix(in srgb, var(--ant-color-bg-container) 60%, transparent) !important;
+  -webkit-backdrop-filter: blur(14px) saturate(140%);
+  backdrop-filter: blur(14px) saturate(140%);
+  border-inline-end: 1px solid color-mix(in srgb, var(--ant-color-primary) 22%, transparent);
+}
+
+.sider-brand {
+  border-bottom: 1px solid color-mix(in srgb, var(--ant-color-primary) 22%, transparent);
+}
+
+.sider-brand .brand-text {
+  background: linear-gradient(135deg, #6ea8fe, #a78bfa 55%, #22d3ee);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  font-weight: 800;
+  letter-spacing: 1.2px;
+}
+
+.sider-nav .ant-menu-item,
+.sider-utility .ant-menu-item {
+  border-radius: 10px;
+  margin-inline: 8px;
+  transition: background-color 0.2s, color 0.2s, transform 0.15s, box-shadow 0.2s;
+}
+
+.sider-nav .ant-menu-item .anticon,
+.sider-utility .ant-menu-item .anticon {
+  font-size: 17px;
+}
+
+.sider-nav .ant-menu-item:hover:not(.ant-menu-item-selected),
+.sider-utility .ant-menu-item:hover:not(.ant-menu-item-selected) {
+  transform: translateX(2px);
+}
+
+.sider-nav .ant-menu-item-selected,
+.sider-utility .ant-menu-item-selected {
+  background: linear-gradient(90deg,
+    color-mix(in srgb, var(--ant-color-primary) 34%, transparent),
+    color-mix(in srgb, #22d3ee 20%, transparent)) !important;
+  color: #fff !important;
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--ant-color-primary) 50%, transparent),
+    0 6px 18px color-mix(in srgb, var(--ant-color-primary) 30%, transparent);
+}
+
+.sider-nav .ant-menu-item-selected .anticon,
+.sider-utility .ant-menu-item-selected .anticon {
+  color: #fff !important;
+}
+
+.sidebar-command-trigger {
+  border-radius: 10px;
+}
