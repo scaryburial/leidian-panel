@@ -207,7 +207,7 @@
       "panelUpdateDialogDesc": "這將把 3X-UI 更新到 #version# 並重新啟動面板服務。",
       "panelUpdateStartedPopover": "面板更新已開始",
       "panelUpdateFailedTitle": "面板更新失敗",
-      "panelUpdateFailedDesc": "更新未成功完成。請檢查伺服器日誌，或在命令列執行「x-ui update」。",
+      "panelUpdateFailedDesc": "更新未成功完成。請檢查伺服器日誌，或在命令列執行「ui3344 update」。",
       "panelUpdateUnknownTitle": "無法確認更新是否已完成",
       "panelUpdateUnknownDesc": "面板未能及時回報結果。請重新整理以檢查目前版本，或檢查伺服器日誌。",
       "geofileUpdateDialog": "您確定要更新地理檔案嗎？",
@@ -934,7 +934,8 @@
       "renewOnDayDesc": "每個自然月的這一天午夜（依面板時區）續期，而不是每 N 天續期一次。若當月沒有該日期，則在當月最後一天續期。填 0 保持按天間隔模式。",
       "renewsUsed": "已用續期次數",
       "tuicTotalGBDesc": "TUIC does not support per-client traffic limits; set traffic limit on the inbound instead.",
-      "bulkAdTagHint": "輸入 32 位十六進位標籤以設定，或輸入 'none' 清除 MTProto 贊助頻道。"
+      "bulkAdTagHint": "輸入 32 位十六進位標籤以設定，或輸入 'none' 清除 MTProto 贊助頻道。",
+      "onlineIp": "線上 IP/歸屬地"
     },
     "groups": {
       "name": "名稱",

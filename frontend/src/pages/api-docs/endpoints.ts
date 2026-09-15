@@ -547,6 +547,15 @@ export const sections: readonly Section[] = [
         response: '{\n  "success": true,\n  "obj": ["v25.10.31", "v25.9.15", "v25.8.1"]\n}',
       },
       {
+        method: 'POST',
+        path: '/panel/api/server/ipGeo',
+        summary:
+          'Resolve an IPv4 address to its region (country/province/city/ISP) using the offline ip2region database. Returns found=false for IPv6 or unknown addresses.',
+        body: '{\n  "ip": "114.114.114.114"\n}',
+        response:
+          '{\n  "success": true,\n  "obj": {\n    "ip": "114.114.114.114",\n    "found": true,\n    "country": "\u4e2d\u56fd",\n    "province": "\u6c5f\u82cf\u7701",\n    "city": "\u5357\u4eac\u5e02",\n    "isp": "\u7535\u4fe1"\n  }\n}',
+      },
+      {
         method: 'GET',
         path: '/panel/api/server/getPanelUpdateInfo',
         summary: 'Check whether a newer 3x-ui release is available on GitHub.',

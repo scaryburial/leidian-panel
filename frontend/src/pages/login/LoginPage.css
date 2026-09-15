@@ -411,3 +411,19 @@
 .submit-row {
   margin-bottom: 0;
 }
+
+/* Custom anime background (login) — image with a readability scrim. */
+.login-app {
+  background-image: linear-gradient(rgba(12, 14, 26, 0.45), rgba(12, 14, 26, 0.58)), url('../../assets/login-raiden.jpg');
+  background-size: cover, cover;
+  background-position: center, center;
+  background-repeat: no-repeat, no-repeat;
+}
+
+.login-app.is-dark {
+  background-image: linear-gradient(rgba(6, 8, 16, 0.62), rgba(6, 8, 16, 0.72)), url('../../assets/login-raiden.jpg');
+}
+
+.login-app.is-dark.is-ultra {
+  background-image: linear-gradient(rgba(0, 0, 0, 0.72), rgba(0, 0, 0, 0.82)), url('../../assets/login-raiden.jpg');
+}

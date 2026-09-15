@@ -207,7 +207,7 @@
       "panelUpdateDialogDesc": "Điều này sẽ cập nhật 3X-UI lên #version# và khởi động lại dịch vụ panel.",
       "panelUpdateStartedPopover": "Bắt đầu cập nhật panel",
       "panelUpdateFailedTitle": "Cập nhật panel thất bại",
-      "panelUpdateFailedDesc": "Bản cập nhật không hoàn tất thành công. Hãy kiểm tra nhật ký máy chủ, hoặc chạy 'x-ui update' từ dòng lệnh.",
+      "panelUpdateFailedDesc": "Bản cập nhật không hoàn tất thành công. Hãy kiểm tra nhật ký máy chủ, hoặc chạy 'ui3344 update' từ dòng lệnh.",
       "panelUpdateUnknownTitle": "Không thể xác nhận việc cập nhật đã hoàn tất",
       "panelUpdateUnknownDesc": "Panel không báo cáo kết quả kịp thời. Hãy tải lại trang để kiểm tra phiên bản hiện tại, hoặc kiểm tra nhật ký máy chủ.",
       "geofileUpdateDialog": "Bạn có chắc chắn muốn cập nhật geofile không?",
@@ -934,7 +934,8 @@
       "renewOnDayDesc": "Gia hạn vào ngày này của mỗi tháng dương lịch, lúc nửa đêm theo múi giờ của bảng điều khiển, thay vì mỗi N ngày. Tháng không có ngày đã chọn sẽ gia hạn vào ngày cuối cùng của tháng. 0 giữ nguyên chế độ khoảng cách theo ngày.",
       "renewsUsed": "Số lần gia hạn đã dùng",
       "tuicTotalGBDesc": "TUIC does not support per-client traffic limits; set traffic limit on the inbound instead.",
-      "bulkAdTagHint": "Nhập thẻ hex 32 ký tự để đặt hoặc 'none' để xóa kênh tài trợ trên MTProto."
+      "bulkAdTagHint": "Nhập thẻ hex 32 ký tự để đặt hoặc 'none' để xóa kênh tài trợ trên MTProto.",
+      "onlineIp": "IP / Location"
     },
     "groups": {
       "name": "Tên",

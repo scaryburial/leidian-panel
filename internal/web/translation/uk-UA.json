@@ -207,7 +207,7 @@
       "panelUpdateDialogDesc": "Це оновить 3X-UI до #version# та перезапустить сервіс панелі.",
       "panelUpdateStartedPopover": "Розпочато оновлення панелі",
       "panelUpdateFailedTitle": "Не вдалося оновити панель",
-      "panelUpdateFailedDesc": "Оновлення не завершилося успішно. Перевірте журнали сервера або виконайте 'x-ui update' у командному рядку.",
+      "panelUpdateFailedDesc": "Оновлення не завершилося успішно. Перевірте журнали сервера або виконайте 'ui3344 update' у командному рядку.",
       "panelUpdateUnknownTitle": "Не вдалося підтвердити завершення оновлення",
       "panelUpdateUnknownDesc": "Панель не повідомила результат вчасно. Перезавантажте сторінку, щоб перевірити поточну версію, або перевірте журнали сервера.",
       "geofileUpdateDialog": "Ви дійсно хочете оновити геофайл?",
@@ -934,7 +934,8 @@
       "renewOnDayDesc": "Подовжувати цього числа кожного місяця, опівночі за часовим поясом панелі, замість інтервалу в днях. Якщо в місяці такого числа немає, подовження припаде на останній день. 0 — залишити режим інтервалу.",
       "renewsUsed": "Подовжень витрачено",
       "tuicTotalGBDesc": "TUIC does not support per-client traffic limits; set traffic limit on the inbound instead.",
-      "bulkAdTagHint": "Введіть 32-значний hex-тег для встановлення або 'none' для очищення спонсорського каналу на MTProto."
+      "bulkAdTagHint": "Введіть 32-значний hex-тег для встановлення або 'none' для очищення спонсорського каналу на MTProto.",
+      "onlineIp": "IP / Location"
     },
     "groups": {
       "name": "Назва",

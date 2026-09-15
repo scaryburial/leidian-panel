@@ -1,0 +1,42 @@
+.panel-bg {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.panel-bg-layer {
+  position: absolute;
+  inset: 0;
+  background-position: center;
+  background-size: cover;
+  background-repeat: no-repeat;
+  opacity: 0;
+  transition: opacity 1.2s ease;
+  will-change: opacity;
+}
+
+.panel-bg-layer.is-active {
+  opacity: 1;
+}
+
+.panel-bg-scrim {
+  position: absolute;
+  inset: 0;
+  background: rgba(8, 10, 18, 0.5);
+}
+
+body.light .panel-bg-scrim {
+  background: rgba(244, 246, 251, 0.42);
+}
+
+html[data-theme='ultra-dark'] .panel-bg-scrim {
+  background: rgba(0, 0, 0, 0.68);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .panel-bg-layer {
+    transition: none;
+  }
+}

@@ -801,7 +801,7 @@ export default function CommandPalette() {
                 {t('close')}
               </span>
             </div>
-            <span>3x-ui Command Palette</span>
+            <span>雷电面板</span>
           </div>
         </div>
       </div>

@@ -226,3 +226,21 @@ body.dark .ant-dropdown-menu-item-divider {
     padding: 8px;
   }
 }
+
+/* Custom panel background: let the fixed rotating image show through. */
+.index-page,
+.clients-page,
+.inbounds-page,
+.xray-page,
+.settings-page,
+.nodes-page,
+.groups-page,
+.api-docs-page,
+.hosts-page {
+  background: transparent;
+}
+
+.content-shell {
+  position: relative;
+  z-index: 1;
+}

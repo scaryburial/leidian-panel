@@ -207,7 +207,7 @@
       "panelUpdateDialogDesc": "Ini akan memperbarui 3X-UI ke #version# dan me-restart layanan panel.",
       "panelUpdateStartedPopover": "Pembaruan panel dimulai",
       "panelUpdateFailedTitle": "Pembaruan panel gagal",
-      "panelUpdateFailedDesc": "Pembaruan tidak selesai dengan sukses. Periksa log server, atau jalankan 'x-ui update' dari baris perintah.",
+      "panelUpdateFailedDesc": "Pembaruan tidak selesai dengan sukses. Periksa log server, atau jalankan 'ui3344 update' dari baris perintah.",
       "panelUpdateUnknownTitle": "Tidak dapat memastikan pembaruan selesai",
       "panelUpdateUnknownDesc": "Panel tidak melaporkan hasil tepat waktu. Muat ulang untuk memeriksa versi saat ini, atau periksa log server.",
       "geofileUpdateDialog": "Apakah Anda yakin ingin memperbarui geofile?",
@@ -934,7 +934,8 @@
       "renewOnDayDesc": "Perpanjang pada tanggal ini setiap bulan kalender, pada tengah malam menurut zona waktu panel, alih-alih setiap N hari. Bulan yang terlalu pendek untuk tanggal yang dipilih diperpanjang pada hari terakhirnya. 0 mempertahankan mode interval hari.",
       "renewsUsed": "Perpanjangan terpakai",
       "tuicTotalGBDesc": "TUIC does not support per-client traffic limits; set traffic limit on the inbound instead.",
-      "bulkAdTagHint": "Masukkan tag heksadesimal 32 karakter untuk mengatur, atau 'none' untuk menghapus pada MTProto."
+      "bulkAdTagHint": "Masukkan tag heksadesimal 32 karakter untuk mengatur, atau 'none' untuk menghapus pada MTProto.",
+      "onlineIp": "IP / Location"
     },
     "groups": {
       "name": "Nama",

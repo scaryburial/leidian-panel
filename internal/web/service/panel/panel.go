@@ -129,19 +129,12 @@ func (s *PanelService) RestartPanel(delay time.Duration) error {
 // is enabled on a dev build it compares commits against the rolling dev release;
 // otherwise it compares versions against the latest stable tag.
 func (s *PanelService) GetUpdateInfo() (*PanelUpdateInfo, error) {
-	if devChannelActive() {
-		return getDevUpdateInfo()
-	}
-	latest, err := fetchLatestPanelVersion()
-	if err != nil {
-		return nil, err
-	}
 	current := config.GetBaseVersion()
 	return &PanelUpdateInfo{
-		Channel:         "stable",
+		Channel:         "local",
 		CurrentVersion:  current,
-		LatestVersion:   latest,
-		UpdateAvailable: isNewerVersion(latest, current),
+		LatestVersion:   current,
+		UpdateAvailable: false,
 	}, nil
 }
 
@@ -181,14 +174,14 @@ func getDevUpdateInfo() (*PanelUpdateInfo, error) {
 // setting. Returns the run ID to pass to GetUpdateStatus so the caller can
 // tell this run's result apart from a stale one.
 func (s *PanelService) StartUpdate() (int64, error) {
-	return s.startUpdate(devChannelActive())
+	return 0, fmt.Errorf("panel self-update is disabled")
 }
 
 // StartUpdateChannel runs the updater against an explicitly chosen channel,
 // overriding the local dev-channel setting. Used by the master node updater so
 // a node can be moved to the dev channel from the central panel.
 func (s *PanelService) StartUpdateChannel(dev bool) (int64, error) {
-	return s.startUpdate(dev)
+	return 0, fmt.Errorf("panel self-update is disabled")
 }
 
 // GetUpdateStatus reports the outcome of the most recently launched panel
@@ -251,7 +244,7 @@ func (s *PanelService) startUpdate(useDev bool) (int64, error) {
 	proxyEnv := updateProxyEnvVars()
 
 	if systemdRun, err := exec.LookPath("systemd-run"); err == nil {
-		unitName := fmt.Sprintf("x-ui-web-update-%d", time.Now().Unix())
+		unitName := fmt.Sprintf("ui3344-web-update-%d", time.Now().Unix())
 		args := []string{
 			"--unit", unitName,
 			"--setenv", "XUI_MAIN_FOLDER=" + mainFolder,
@@ -430,29 +423,8 @@ func fetchLatestPanelVersion() (string, error) {
 // fetchPanelRelease fetches a release from GitHub. An empty tag resolves the
 // latest stable release; a non-empty tag (e.g. dev-latest) resolves that tag.
 func fetchPanelRelease(tag string) (*service.Release, error) {
-	url := "https://api.github.com/repos/MHSanaei/3x-ui/releases/latest"
-	if tag != "" {
-		url = "https://api.github.com/repos/MHSanaei/3x-ui/releases/tags/" + tag
-	}
-	client := (&service.SettingService{}).NewProxiedHTTPClient(10 * time.Second)
-	req, reqErr := http.NewRequestWithContext(context.Background(), http.MethodGet, url, nil)
-	if reqErr != nil {
-		return nil, reqErr
-	}
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("GitHub API returned status %d: %s", resp.StatusCode, resp.Status)
-	}
-
-	var release service.Release
-	if err := json.NewDecoder(resp.Body).Decode(&release); err != nil {
-		return nil, err
-	}
-	return &release, nil
+	// Privacy: upstream release lookup disabled; no GitHub request is made.
+	return nil, fmt.Errorf("panel release lookup is disabled")
 }
 
 // extractReleaseCommit reads the build commit recorded in the dev release: first
@@ -511,7 +483,7 @@ func resolveUpdateFolders() (string, string) {
 		}
 	}
 	if mainFolder == "" {
-		mainFolder = "/usr/local/x-ui"
+		mainFolder = "/usr/local/ui3344"
 	}
 
 	serviceFolder := os.Getenv("XUI_SERVICE")

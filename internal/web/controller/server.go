@@ -6,9 +6,11 @@ import (
 	"regexp"
 	"slices"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/mhsanaei/3x-ui/v3/internal/database/model"
+	"github.com/mhsanaei/3x-ui/v3/internal/ipgeo"
 	"github.com/mhsanaei/3x-ui/v3/internal/logger"
 	"github.com/mhsanaei/3x-ui/v3/internal/web/entity"
 	"github.com/mhsanaei/3x-ui/v3/internal/web/global"
@@ -50,6 +52,7 @@ func (a *ServerController) initRouter(g *gin.RouterGroup) {
 	g.GET("/xrayObservatory", a.getXrayObservatory)
 	g.GET("/xrayObservatoryHistory/:tag/:bucket", a.getXrayObservatoryHistoryBucket)
 	g.GET("/getXrayVersion", a.getXrayVersion)
+	g.POST("/ipGeo", a.ipGeo)
 	g.GET("/getPanelUpdateInfo", a.getPanelUpdateInfo)
 	g.GET("/getUpdateStatus", a.getUpdateStatus)
 	g.GET("/getConfigJson", a.getConfigJson)
@@ -527,6 +530,28 @@ func (a *ServerController) getNewmlkem768(c *gin.Context) {
 		return
 	}
 	jsonObj(c, out, nil)
+}
+
+// ipGeo resolves an IP address to its region using the offline ip2region
+// database. Returns found=false for IPv6 or unknown addresses.
+func (a *ServerController) ipGeo(c *gin.Context) {
+	ip := strings.TrimSpace(c.PostForm("ip"))
+	if ip == "" {
+		ip = strings.TrimSpace(c.Query("ip"))
+	}
+	if ip == "" {
+		jsonMsg(c, "ip is required", nil)
+		return
+	}
+	region, ok := ipgeo.Lookup(ip)
+	jsonObj(c, map[string]any{
+		"ip":       ip,
+		"found":    ok,
+		"country":  region.Country,
+		"province": region.Province,
+		"city":     region.City,
+		"isp":      region.ISP,
+	}, nil)
 }
 
 func (a *ServerController) getClientIps(c *gin.Context) {

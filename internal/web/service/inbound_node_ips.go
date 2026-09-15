@@ -7,6 +7,7 @@ import (
 
 	"github.com/mhsanaei/3x-ui/v3/internal/database"
 	"github.com/mhsanaei/3x-ui/v3/internal/database/model"
+	"github.com/mhsanaei/3x-ui/v3/internal/ipgeo"
 
 	"gorm.io/gorm/clause"
 )
@@ -219,6 +220,11 @@ type ClientIpInfo struct {
 	IP   string `json:"ip"`
 	Time string `json:"time"`
 	Node string `json:"node"`
+	// Region is resolved offline from the bundled ip2region database.
+	Country  string `json:"country,omitempty"`
+	Province string `json:"province,omitempty"`
+	City     string `json:"city,omitempty"`
+	ISP      string `json:"isp,omitempty"`
 }
 
 // GetClientIpsWithNodes returns a client's recorded IPs (from the flat
@@ -257,6 +263,9 @@ func (s *InboundService) GetClientIpsWithNodes(email string) ([]ClientIpInfo, er
 			continue
 		}
 		info := ClientIpInfo{IP: e.IP}
+		if region, ok := ipgeo.Lookup(e.IP); ok {
+			info.Country, info.Province, info.City, info.ISP = region.Country, region.Province, region.City, region.ISP
+		}
 		if e.Timestamp > 0 {
 			info.Time = time.Unix(e.Timestamp, 0).Local().Format("2006-01-02 15:04:05")
 		}

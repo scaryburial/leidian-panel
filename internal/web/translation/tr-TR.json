@@ -207,7 +207,7 @@
       "panelUpdateDialogDesc": "Bu işlem 3X-UI'yi #version# sürümüne güncelleyecek ve panel servisini yeniden başlatacaktır.",
       "panelUpdateStartedPopover": "Panel güncellemesi başlatıldı",
       "panelUpdateFailedTitle": "Panel güncellemesi başarısız oldu",
-      "panelUpdateFailedDesc": "Güncelleme başarıyla tamamlanamadı. Sunucu günlüklerini kontrol edin veya komut satırından 'x-ui update' çalıştırın.",
+      "panelUpdateFailedDesc": "Güncelleme başarıyla tamamlanamadı. Sunucu günlüklerini kontrol edin veya komut satırından 'ui3344 update' çalıştırın.",
       "panelUpdateUnknownTitle": "Güncellemenin tamamlandığı doğrulanamadı",
       "panelUpdateUnknownDesc": "Panel zamanında bir sonuç bildirmedi. Geçerli sürümü kontrol etmek için sayfayı yenileyin veya sunucu günlüklerini kontrol edin.",
       "geofileUpdateDialog": "Geofile'ı gerçekten güncellemek istiyor musunuz?",
@@ -934,7 +934,8 @@
       "renewOnDayDesc": "Her N günde bir yerine, her takvim ayının bu gününde, panel saat diliminde gece yarısı yeniler. Seçilen gün için kısa olan aylarda ayın son gününde yeniler. 0 gün aralığı modunu korur.",
       "renewsUsed": "Kullanılan yenileme",
       "tuicTotalGBDesc": "TUIC does not support per-client traffic limits; set traffic limit on the inbound instead.",
-      "bulkAdTagHint": "Aramak için 32 karakterlik onaltılık etiket girin veya MTProto üzerinde temizlemek için 'none' yazın."
+      "bulkAdTagHint": "Aramak için 32 karakterlik onaltılık etiket girin veya MTProto üzerinde temizlemek için 'none' yazın.",
+      "onlineIp": "IP / Location"
     },
     "groups": {
       "name": "İsim",

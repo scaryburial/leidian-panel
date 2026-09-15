@@ -20,7 +20,7 @@ services:
       - NET_ADMIN
       - NET_RAW
     volumes:
-      - $PWD/db/:/etc/x-ui/
+      - $PWD/db/:/etc/ui3344/
       - $PWD/cert/:/root/cert/
       # Persists acme.sh state so certificate auto-renewal survives container
       # recreation (the entrypoint re-registers the renewal cron job from it).

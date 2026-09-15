@@ -175,7 +175,7 @@ func (s *DiscordService) BuildReport(ctx context.Context, server ServerProvider,
 		} else if len(dbData) > 0 {
 			filename := server.BackupFilename("")
 			if filename == "" {
-				filename = "x-ui.db"
+				filename = "ui3344.db"
 			}
 			files = append(files, FileAttachment{
 				Filename: filename,

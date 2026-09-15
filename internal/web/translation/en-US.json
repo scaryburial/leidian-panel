@@ -207,7 +207,7 @@
       "panelUpdateDialogDesc": "This will update 3X-UI to #version# and restart the panel service.",
       "panelUpdateStartedPopover": "Panel update started",
       "panelUpdateFailedTitle": "Panel update failed",
-      "panelUpdateFailedDesc": "The update did not finish successfully. Check the server logs, or run 'x-ui update' from the command line.",
+      "panelUpdateFailedDesc": "The update did not finish successfully. Check the server logs, or run 'ui3344 update' from the command line.",
       "panelUpdateUnknownTitle": "Couldn't confirm the update finished",
       "panelUpdateUnknownDesc": "The panel didn't report a result in time. Reload to check the current version, or check the server logs.",
       "geofileUpdateDialog": "Do you really want to update the geofile?",
@@ -934,7 +934,8 @@
       "renewOnDayDesc": "Renew on this day of every calendar month, at midnight in the panel's time zone, instead of every N days. A month too short for the chosen day renews on its last day. 0 keeps the day-interval mode.",
       "renewsUsed": "Renewals used",
       "tuicTotalGBDesc": "TUIC does not support per-client traffic limits; set traffic limit on the inbound instead.",
-      "bulkAdTagHint": "Enter a 32-character hex tag to set, or 'none' to clear sponsor channel on MTProto inbounds."
+      "bulkAdTagHint": "Enter a 32-character hex tag to set, or 'none' to clear sponsor channel on MTProto inbounds.",
+      "onlineIp": "IP / Location"
     },
     "groups": {
       "name": "Name",

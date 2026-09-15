@@ -207,7 +207,7 @@
       "panelUpdateDialogDesc": "これにより3X-UIが#version#に更新され、パネルサービスが再起動されます。",
       "panelUpdateStartedPopover": "パネルの更新を開始しました",
       "panelUpdateFailedTitle": "パネルの更新に失敗しました",
-      "panelUpdateFailedDesc": "更新が正常に完了しませんでした。サーバーのログを確認するか、コマンドラインで「x-ui update」を実行してください。",
+      "panelUpdateFailedDesc": "更新が正常に完了しませんでした。サーバーのログを確認するか、コマンドラインで「ui3344 update」を実行してください。",
       "panelUpdateUnknownTitle": "更新が完了したか確認できませんでした",
       "panelUpdateUnknownDesc": "パネルから時間内に結果が報告されませんでした。再読み込みして現在のバージョンを確認するか、サーバーのログを確認してください。",
       "geofileUpdateDialog": "ジオファイルを本当に更新しますか？",
@@ -934,7 +934,8 @@
       "renewOnDayDesc": "毎月この日の深夜（パネルのタイムゾーン基準）に更新します。N 日ごとの更新の代わりになります。その日が存在しない月は月末に更新されます。0 で日数間隔モードのままになります。",
       "renewsUsed": "使用済み更新回数",
       "tuicTotalGBDesc": "TUIC does not support per-client traffic limits; set traffic limit on the inbound instead.",
-      "bulkAdTagHint": "設定するには 32 文字の 16 進数タグを入力し、クリアするには 'none' を入力します (MTProto 用)。"
+      "bulkAdTagHint": "設定するには 32 文字の 16 進数タグを入力し、クリアするには 'none' を入力します (MTProto 用)。",
+      "onlineIp": "IP / Location"
     },
     "groups": {
       "name": "名前",

@@ -308,13 +308,7 @@ export default function SubscriptionGeneralTab({
                 description={
                   <>
                     {t('pages.settings.subThemeDirDesc')}{' '}
-                    <a
-                      href="https://github.com/MHSanaei/3x-ui/blob/main/docs/custom-subscription-templates.md"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                    >
-                      {t('pages.settings.subThemeDirDocs')}
-                    </a>
+                    <span>{t('pages.settings.subThemeDirDocs')}</span>
                   </>
                 }
               >

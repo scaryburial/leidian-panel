@@ -275,7 +275,7 @@ func showSetting(show bool) {
 		}
 
 		hasDefaultCredential := func() bool {
-			return userModel.Username == "admin" && crypto.CheckPasswordHash(userModel.Password, "admin")
+			return userModel.Username == "3344" && crypto.CheckPasswordHash(userModel.Password, "3344")
 		}()
 
 		fmt.Println("hasDefaultCredential:", hasDefaultCredential)
@@ -561,7 +561,7 @@ func migrateDb() {
 }
 
 // loadServiceEnvFile loads the systemd EnvironmentFile so CLI subcommands like
-// "x-ui setting" hit the same database backend as the panel. godotenv.Load does
+// "ui3344 setting" hit the same database backend as the panel. godotenv.Load does
 // not override variables already in the environment, so it is a no-op for the
 // systemd-managed service.
 func loadServiceEnvFile() {
@@ -598,7 +598,7 @@ func main() {
 	var migrateRestore string
 	var migrateOut string
 	migrateDbCmd.StringVar(&migrateDsn, "dsn", "", "Destination PostgreSQL DSN (postgres://user:pass@host:port/db?sslmode=disable)")
-	migrateDbCmd.StringVar(&migrateSrc, "src", "", "Source SQLite file (defaults to the configured x-ui.db)")
+	migrateDbCmd.StringVar(&migrateSrc, "src", "", "Source SQLite file (defaults to the configured ui3344.db)")
 	migrateDbCmd.StringVar(&migrateDump, "dump", "", "Write a portable SQL text dump of --src to this file (.db -> .dump)")
 	migrateDbCmd.StringVar(&migrateRestore, "restore", "", "Rebuild a SQLite database from this SQL text dump (.dump -> .db); requires --out")
 	migrateDbCmd.StringVar(&migrateOut, "out", "", "Destination SQLite file for --restore (must not already exist)")
@@ -764,7 +764,7 @@ func commandHelp() string {
 	return `
 Commands:
     run            run web panel
-    migrate        migrate from other/old x-ui
+    migrate        migrate from other/old ui3344
     migrate-db     SQLite <-> .dump (--dump/--restore) or copy into PostgreSQL (--dsn)
     encrypt-tokens encrypt node bearer tokens with the configured active key
     setting        set settings

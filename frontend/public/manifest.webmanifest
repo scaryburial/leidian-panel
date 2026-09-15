@@ -1,6 +1,6 @@
 {
-  "name": "3x-ui",
-  "short_name": "3x-ui",
+  "name": "雷电面板",
+  "short_name": "雷电面板",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",

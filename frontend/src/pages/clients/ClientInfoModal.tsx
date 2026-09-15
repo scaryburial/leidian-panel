@@ -11,7 +11,7 @@ import {
 
 import { ClipboardManager, FileManager, HttpUtil, IntlUtil, SizeFormatter } from '@/utils';
 import { formatInboundLabel, formatTunnelConfigMeta } from '@/lib/inbounds/label';
-import { normalizeClientIps, type ClientIpInfo } from '@/lib/clients/ip-log';
+import { formatRegion, normalizeClientIps, type ClientIpInfo } from '@/lib/clients/ip-log';
 import { useDatepicker } from '@/hooks/useDatepicker';
 import { useClientHwids } from '@/hooks/useClientHwids';
 import type { ClientRecord, InboundOption } from '@/hooks/useClients';
@@ -876,6 +876,11 @@ export default function ClientInfoModal({
                 {entry.node ? (
                   <span style={{ marginInlineStart: 6, opacity: 0.85, fontWeight: 600 }}>
                     @ {entry.node}
+                  </span>
+                ) : null}
+                {formatRegion(entry) ? (
+                  <span style={{ marginInlineStart: 6, opacity: 0.85 }}>
+                    {formatRegion(entry)}
                   </span>
                 ) : null}
               </Tag>

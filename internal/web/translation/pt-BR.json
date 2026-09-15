@@ -207,7 +207,7 @@
       "panelUpdateDialogDesc": "Isso atualizará o 3X-UI para #version# e reiniciará o serviço do painel.",
       "panelUpdateStartedPopover": "Atualização do painel iniciada",
       "panelUpdateFailedTitle": "Falha ao atualizar o painel",
-      "panelUpdateFailedDesc": "A atualização não foi concluída com sucesso. Verifique os logs do servidor ou execute 'x-ui update' na linha de comando.",
+      "panelUpdateFailedDesc": "A atualização não foi concluída com sucesso. Verifique os logs do servidor ou execute 'ui3344 update' na linha de comando.",
       "panelUpdateUnknownTitle": "Não foi possível confirmar se a atualização terminou",
       "panelUpdateUnknownDesc": "O painel não retornou um resultado a tempo. Recarregue a página para verificar a versão atual, ou verifique os logs do servidor.",
       "geofileUpdateDialog": "Você realmente deseja atualizar o geofile?",
@@ -934,7 +934,8 @@
       "renewOnDayDesc": "Renova neste dia de cada mês do calendário, à meia-noite no fuso horário do painel, em vez de a cada N dias. Se o mês for curto demais para o dia escolhido, renova no último dia dele. 0 mantém o modo de intervalo em dias.",
       "renewsUsed": "Renovações usadas",
       "tuicTotalGBDesc": "TUIC does not support per-client traffic limits; set traffic limit on the inbound instead.",
-      "bulkAdTagHint": "Insira uma tag hexadecimal de 32 caracteres para definir ou 'none' para limpar no MTProto."
+      "bulkAdTagHint": "Insira uma tag hexadecimal de 32 caracteres para definir ou 'none' para limpar no MTProto.",
+      "onlineIp": "IP / Location"
     },
     "groups": {
       "name": "Nome",

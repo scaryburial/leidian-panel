@@ -5,7 +5,19 @@ export type ClientIpInfo = {
   ip: string;
   time: string;
   node: string;
+  country?: string;
+  province?: string;
+  city?: string;
+  isp?: string;
 };
+
+// formatRegion renders a client IP's resolved region, e.g. "江苏省 南京市 电信".
+// The country is dropped for domestic (China) addresses to avoid noise.
+export function formatRegion(entry: ClientIpInfo): string {
+  const parts = [entry.province, entry.city, entry.isp].filter(Boolean);
+  if (entry.country && entry.country !== '中国') parts.unshift(entry.country);
+  return parts.join(' ');
+}
 
 // normalizeClientIps accepts the API payload and returns typed entries. It also
 // tolerates the legacy shape (a plain array of "ip (time)" strings) so the UI
@@ -26,6 +38,10 @@ export function normalizeClientIps(obj: unknown): ClientIpInfo[] {
         ip,
         time: typeof o.time === 'string' ? o.time : '',
         node: typeof o.node === 'string' ? o.node : '',
+        country: typeof o.country === 'string' ? o.country : '',
+        province: typeof o.province === 'string' ? o.province : '',
+        city: typeof o.city === 'string' ? o.city : '',
+        isp: typeof o.isp === 'string' ? o.isp : '',
       });
     }
   }

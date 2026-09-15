@@ -70,7 +70,8 @@ import ClientTrafficCell from '@/components/clients/ClientTrafficCell';
 import ClientSpeedTag, { isActiveSpeed } from '@/components/clients/ClientSpeedTag';
 import ClientCardComment from '@/components/clients/ClientCardComment';
 import AppSidebar from '@/layouts/AppSidebar';
-import { IntlUtil, SizeFormatter } from '@/utils';
+import { HttpUtil, IntlUtil, SizeFormatter } from '@/utils';
+import { formatRegion, normalizeClientIps, type ClientIpInfo } from '@/lib/clients/ip-log';
 import { setMessageInstance } from '@/utils/messageBus';
 import { LazyMount } from '@/components/utility';
 import {
@@ -512,6 +513,40 @@ export default function ClientsPage() {
   }, [clients]);
 
   const onlineSet = useMemo(() => new Set(onlines || []), [onlines]);
+
+  // Online clients' current source IP + offline-resolved region, for the
+  // "IP / Location" column. One request per online client (usually few).
+  const [ipRegionMap, setIpRegionMap] = useState<Record<string, ClientIpInfo>>({});
+  useEffect(() => {
+    let cancelled = false;
+    const emails = onlines || [];
+    if (emails.length === 0) {
+      setIpRegionMap({});
+      return;
+    }
+    void (async () => {
+      const map: Record<string, ClientIpInfo> = {};
+      await Promise.all(
+        emails.map(async (email) => {
+          try {
+            const msg = await HttpUtil.post(
+              `/panel/api/clients/ips/${encodeURIComponent(email)}`,
+              undefined,
+              { silent: true },
+            );
+            const infos = normalizeClientIps(msg?.obj);
+            if (infos.length > 0) map[email] = infos[0];
+          } catch {
+            // ignore per-client failures
+          }
+        }),
+      );
+      if (!cancelled) setIpRegionMap(map);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [onlines]);
   const inboundsById = useMemo(() => {
     const out: Record<number, InboundOption> = {};
     for (const ib of inbounds) out[ib.id] = ib;
@@ -1068,6 +1103,27 @@ export default function ClientsPage() {
             <Tooltip title={lastOnlineTitle}>
               <Tag>{t('pages.clients.offline')}</Tag>
             </Tooltip>
+          );
+        },
+      },
+      {
+        title: t('pages.clients.onlineIp'),
+        key: 'onlineIp',
+        width: 200,
+        render: (_v, record) => {
+          if (!record.enable || !isOnline(record.email)) return null;
+          const info = ipRegionMap[record.email];
+          if (!info) return null;
+          const region = formatRegion(info);
+          return (
+            <span className="ov-mono" title={region}>
+              {info.ip}
+              {region ? (
+                <span style={{ marginInlineStart: 6, opacity: 0.75, fontFamily: 'inherit' }}>
+                  {region}
+                </span>
+              ) : null}
+            </span>
           );
         },
       },

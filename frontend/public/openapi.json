@@ -6082,6 +6082,60 @@
         }
       }
     },
+    "/panel/api/server/ipGeo": {
+      "post": {
+        "tags": [
+          "Server"
+        ],
+        "summary": "Resolve an IPv4 address to its region (country/province/city/ISP) using the offline ip2region database. Returns found=false for IPv6 or unknown addresses.",
+        "operationId": "post_panel_api_server_ipGeo",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              },
+              "example": {
+                "ip": "114.114.114.114"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "msg": {
+                      "type": "string"
+                    },
+                    "obj": {}
+                  }
+                },
+                "example": {
+                  "success": true,
+                  "obj": {
+                    "ip": "114.114.114.114",
+                    "found": true,
+                    "country": "中国",
+                    "province": "江苏省",
+                    "city": "南京市",
+                    "isp": "电信"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/panel/api/server/getPanelUpdateInfo": {
       "get": {
         "tags": [

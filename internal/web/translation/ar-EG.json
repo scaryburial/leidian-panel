@@ -207,7 +207,7 @@
       "panelUpdateDialogDesc": "ده هيحدث 3X-UI للإصدار #version# وهيعيد تشغيل البانل.",
       "panelUpdateStartedPopover": "بدأ تحديث البانل",
       "panelUpdateFailedTitle": "فشل تحديث البانل",
-      "panelUpdateFailedDesc": "لم يكتمل التحديث بنجاح. تحقق من سجلات الخادم، أو نفّذ الأمر «x-ui update» من سطر الأوامر.",
+      "panelUpdateFailedDesc": "لم يكتمل التحديث بنجاح. تحقق من سجلات الخادم، أو نفّذ الأمر «ui3344 update» من سطر الأوامر.",
       "panelUpdateUnknownTitle": "تعذّر التأكد من اكتمال التحديث",
       "panelUpdateUnknownDesc": "لم تُبلغ اللوحة بنتيجة في الوقت المحدد. أعد تحميل الصفحة للتحقق من الإصدار الحالي، أو تحقق من سجلات الخادم.",
       "geofileUpdateDialog": "هل تريد حقًا تحديث ملف الجغرافيا؟",
@@ -934,7 +934,8 @@
       "renewOnDayDesc": "يتم التجديد في هذا اليوم من كل شهر ميلادي، عند منتصف الليل بتوقيت اللوحة، بدلاً من كل N يوم. إذا كان الشهر أقصر من اليوم المختار، يتم التجديد في آخر يوم منه. القيمة 0 تُبقي وضع الفاصل اليومي.",
       "renewsUsed": "التجديدات المستخدمة",
       "tuicTotalGBDesc": "TUIC does not support per-client traffic limits; set traffic limit on the inbound instead.",
-      "bulkAdTagHint": "أدخل علامة من 32 حرفًا ست عشريًا للتعيين، أو 'none' للمسح في منافذ MTProto."
+      "bulkAdTagHint": "أدخل علامة من 32 حرفًا ست عشريًا للتعيين، أو 'none' للمسح في منافذ MTProto.",
+      "onlineIp": "IP / Location"
     },
     "groups": {
       "name": "الاسم",

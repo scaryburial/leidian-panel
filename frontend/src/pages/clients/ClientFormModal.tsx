@@ -33,7 +33,7 @@ import { Controller, FormProvider, useForm, useWatch, useFieldArray } from 'reac
 import { HttpUtil, IntlUtil, RandomUtil, Wireguard } from '@/utils';
 import { formatInboundLabel } from '@/lib/inbounds/label';
 import { generateMtprotoSecret } from '@/lib/xray/inbound-defaults';
-import { normalizeClientIps, type ClientIpInfo } from '@/lib/clients/ip-log';
+import { formatRegion, normalizeClientIps, type ClientIpInfo } from '@/lib/clients/ip-log';
 import { resolveExternalLinkExpiry } from '@/lib/clients/external-link';
 import { useDatepicker } from '@/hooks/useDatepicker';
 import { useClientHwids } from '@/hooks/useClientHwids';
@@ -1576,6 +1576,11 @@ export default function ClientFormModal({
                 {entry.node ? (
                   <span style={{ marginInlineStart: 6, opacity: 0.85, fontWeight: 600 }}>
                     @ {entry.node}
+                  </span>
+                ) : null}
+                {formatRegion(entry) ? (
+                  <span style={{ marginInlineStart: 6, opacity: 0.85 }}>
+                    {formatRegion(entry)}
                   </span>
                 ) : null}
               </Tag>

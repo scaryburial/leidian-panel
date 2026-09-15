@@ -1,0 +1,18 @@
+#!/sbin/openrc-run
+
+command="/usr/local/ui3344/ui3344"
+command_background=true
+pidfile="/run/ui3344.pid"
+description="ui3344 Service"
+procname="ui3344"
+depend() {
+    need net
+}
+start_pre(){
+    cd /usr/local/ui3344
+}
+reload() {
+  ebegin "Reloading ${RC_SVCNAME}"
+  kill -USR1 $(cat $pidfile)
+  eend $?
+}
