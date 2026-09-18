@@ -55,6 +55,15 @@ if [ "${UI3344_SKIP_PRESETS:-0}" != "1" ] && command -v python3 >/dev/null 2>&1 
   UI3344_URL="http://127.0.0.1:${PORT:-33441}${WBP:-/ui3344/}" python3 "$HERE/create-inbounds.py" || echo "! 预设创建失败，可稍后手动运行 create-inbounds.py"
 fi
 
+# 配置订阅服务（开启 Clash/JSON 订阅 + 内置离线分流规则）；可用 UI3344_SKIP_PRESETS=1 跳过
+if [ "${UI3344_SKIP_PRESETS:-0}" != "1" ] && command -v python3 >/dev/null 2>&1 && [ -f "$HERE/configure-subscription.py" ]; then
+  echo "> 配置订阅服务(Clash/JSON + 内置分流规则)…"
+  python3 "$HERE/configure-subscription.py" || echo "! 订阅配置失败，可稍后手动运行 configure-subscription.py"
+  # 订阅服务在启动时读取这些设置，重启使其生效
+  systemctl restart ui3344 2>/dev/null || rc-service ui3344 restart 2>/dev/null || true
+  sleep 2
+fi
+
 echo "========================================"
 echo " 安装完成"
 echo " 管理命令 : ui3344"

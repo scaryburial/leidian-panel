@@ -71,7 +71,7 @@ import ClientSpeedTag, { isActiveSpeed } from '@/components/clients/ClientSpeedT
 import ClientCardComment from '@/components/clients/ClientCardComment';
 import AppSidebar from '@/layouts/AppSidebar';
 import { HttpUtil, IntlUtil, SizeFormatter } from '@/utils';
-import { formatRegion, normalizeClientIps, type ClientIpInfo } from '@/lib/clients/ip-log';
+import { formatRegion, isPrivateIp, normalizeClientIps, type ClientIpInfo } from '@/lib/clients/ip-log';
 import { setMessageInstance } from '@/utils/messageBus';
 import { LazyMount } from '@/components/utility';
 import {
@@ -514,12 +514,24 @@ export default function ClientsPage() {
 
   const onlineSet = useMemo(() => new Set(onlines || []), [onlines]);
 
-  // Online clients' current source IP + offline-resolved region, for the
-  // "IP / Location" column. One request per online client (usually few).
+  // Every listed client's most recent source IP + offline-resolved region, for
+  // the "IP / Location" column. Offline clients keep their last-seen IP, so the
+  // region stays visible after they disconnect. One request per client on the
+  // current page (bounded by the page size).
   const [ipRegionMap, setIpRegionMap] = useState<Record<string, ClientIpInfo>>({});
+  // Depend on the joined email list, not the clients array: the array is rebuilt
+  // every render, which would re-run the effect forever (React #185).
+  const pageEmailsKey = useMemo(
+    () =>
+      (clients || [])
+        .map((c) => c.email)
+        .filter((email): email is string => !!email)
+        .join('\n'),
+    [clients],
+  );
   useEffect(() => {
     let cancelled = false;
-    const emails = onlines || [];
+    const emails = pageEmailsKey ? pageEmailsKey.split('\n') : [];
     if (emails.length === 0) {
       setIpRegionMap({});
       return;
@@ -546,7 +558,7 @@ export default function ClientsPage() {
     return () => {
       cancelled = true;
     };
-  }, [onlines]);
+  }, [pageEmailsKey]);
   const inboundsById = useMemo(() => {
     const out: Record<number, InboundOption> = {};
     for (const ib of inbounds) out[ib.id] = ib;
@@ -1050,7 +1062,7 @@ export default function ClientsPage() {
       {
         title: t('pages.clients.actions'),
         key: 'actions',
-        width: 200,
+        width: 228,
         render: (_v, record) => (
           <ClientRowActions
             email={record.email}
@@ -1111,19 +1123,21 @@ export default function ClientsPage() {
         key: 'onlineIp',
         width: 200,
         render: (_v, record) => {
-          if (!record.enable || !isOnline(record.email)) return null;
           const info = ipRegionMap[record.email];
           if (!info) return null;
-          const region = formatRegion(info);
+          const region =
+            formatRegion(info) ||
+            (isPrivateIp(info.ip) ? t('pages.clients.intranet') : t('pages.clients.unknown'));
+          const online = !!record.enable && isOnline(record.email);
           return (
-            <span className="ov-mono" title={region}>
-              {info.ip}
-              {region ? (
+            <Tooltip title={`${info.ip} — ${region}`}>
+              <span className="ov-mono" style={{ opacity: online ? 1 : 0.55 }}>
+                {info.ip}
                 <span style={{ marginInlineStart: 6, opacity: 0.75, fontFamily: 'inherit' }}>
                   {region}
                 </span>
-              ) : null}
-            </span>
+              </span>
+            </Tooltip>
           );
         },
       },

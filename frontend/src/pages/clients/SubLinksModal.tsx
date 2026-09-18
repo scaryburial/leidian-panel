@@ -11,6 +11,8 @@ interface SubSettings {
   subURI: string;
   subJsonURI: string;
   subJsonEnable: boolean;
+  subClashURI?: string;
+  subClashEnable?: boolean;
 }
 
 interface SubLinksModalProps {
@@ -27,6 +29,7 @@ interface Row {
   subId: string;
   link: string;
   jsonLink: string;
+  clashLink: string;
 }
 
 export default function SubLinksModal({
@@ -41,6 +44,7 @@ export default function SubLinksModal({
 
   const enabled = !!subSettings?.enable && !!subSettings?.subURI;
   const jsonEnabled = !!subSettings?.subJsonEnable && !!subSettings?.subJsonURI;
+  const clashEnabled = !!subSettings?.subClashEnable && !!subSettings?.subClashURI;
 
   const rows = useMemo<Row[]>(() => {
     if (!enabled) return [];
@@ -55,19 +59,18 @@ export default function SubLinksModal({
         subId: c.subId,
         link: subSettings!.subURI + c.subId,
         jsonLink: jsonEnabled ? subSettings!.subJsonURI + c.subId : '',
+        clashLink: clashEnabled ? subSettings!.subClashURI! + c.subId : '',
       });
     }
     return out;
-  }, [emails, clients, enabled, jsonEnabled, subSettings]);
+  }, [emails, clients, enabled, jsonEnabled, clashEnabled, subSettings]);
 
   const allText = useMemo(
     () =>
       rows
-        .map((r) =>
-          jsonEnabled ? `${r.email}\t${r.link}\t${r.jsonLink}` : `${r.email}\t${r.link}`,
-        )
+        .map((r) => [r.email, r.link, r.jsonLink, r.clashLink].filter(Boolean).join('\t'))
         .join('\n'),
-    [rows, jsonEnabled],
+    [rows],
   );
 
   async function copy(text: string, label?: string) {
@@ -128,6 +131,22 @@ export default function SubLinksModal({
       ),
     },
   ];
+
+  if (clashEnabled) {
+    columns.splice(2, 0, {
+      title: t('pages.clients.subClashLinkColumn'),
+      dataIndex: 'clashLink',
+      key: 'clashLink',
+      ellipsis: true,
+      render: (link: string) => (
+        <Tooltip title={link} placement="topLeft">
+          <Typography.Text copyable={false} ellipsis>
+            {link}
+          </Typography.Text>
+        </Tooltip>
+      ),
+    });
+  }
 
   if (jsonEnabled) {
     columns.splice(2, 0, {

@@ -935,7 +935,11 @@
       "renewsUsed": "Renewals used",
       "tuicTotalGBDesc": "TUIC does not support per-client traffic limits; set traffic limit on the inbound instead.",
       "bulkAdTagHint": "Enter a 32-character hex tag to set, or 'none' to clear sponsor channel on MTProto inbounds.",
-      "onlineIp": "IP / Location"
+      "onlineIp": "IP / Location",
+      "subClashLinkColumn": "Subscription Clash URL",
+      "intranet": "LAN",
+      "unknown": "Unknown",
+      "shareSubscribe": "Share / Subscribe"
     },
     "groups": {
       "name": "Name",

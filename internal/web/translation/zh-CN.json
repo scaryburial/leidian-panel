@@ -935,7 +935,11 @@
       "renewsUsed": "已用续期次数",
       "tuicTotalGBDesc": "TUIC does not support per-client traffic limits; set traffic limit on the inbound instead.",
       "bulkAdTagHint": "输入 32 位十六进制标签以设置，或输入 'none' 清除 MTProto 赞助频道。",
-      "onlineIp": "在线 IP/归属地"
+      "onlineIp": "IP / 归属地",
+      "subClashLinkColumn": "订阅 Clash 地址",
+      "intranet": "内网",
+      "unknown": "未知",
+      "shareSubscribe": "分享 / 订阅"
     },
     "groups": {
       "name": "名称",

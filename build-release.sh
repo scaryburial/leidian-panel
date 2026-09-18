@@ -20,7 +20,7 @@ print('made', d)
 PY
 mv -f dist_tmp_ui3344 "$PKG/ui3344"; chmod +x "$PKG/ui3344"
 cp ui3344.sh ui3344.service.debian ui3344.service.arch ui3344.service.rhel ui3344.rc "$PKG/"
-cp packaging/install.sh packaging/README.md packaging/create-inbounds.py "$PKG/"; chmod +x "$PKG/install.sh"
+cp packaging/install.sh packaging/README.md packaging/create-inbounds.py packaging/configure-subscription.py "$PKG/"; chmod +x "$PKG/install.sh"
 
 # 从内置内核 zip 里取一个默认版本放到 bin/
 TMP=$(mktemp -d)

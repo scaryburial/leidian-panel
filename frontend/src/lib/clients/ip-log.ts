@@ -47,3 +47,9 @@ export function normalizeClientIps(obj: unknown): ClientIpInfo[] {
   }
   return out;
 }
+
+// isPrivateIp reports whether an IPv4 address is in a private/reserved range,
+// so the UI can label it instead of leaving the region blank.
+export function isPrivateIp(ip: string): boolean {
+  return /^(10\.|127\.|169\.254\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(ip);
+}

@@ -29,6 +29,8 @@ interface SubSettings {
   subURI: string;
   subJsonURI: string;
   subJsonEnable: boolean;
+  subClashURI?: string;
+  subClashEnable?: boolean;
   publicHost?: string;
 }
 
@@ -241,6 +243,10 @@ function ClientQrModalContent({
     subId && subEnabled && subSettings?.subJsonEnable && subSettings?.subJsonURI
       ? subSettings.subJsonURI + subId
       : '';
+  const subClashLink =
+    subId && subEnabled && subSettings?.subClashEnable && subSettings?.subClashURI
+      ? subSettings.subClashURI + subId
+      : '';
   const clientId = client?.id;
   const clientSubId = subId ?? '';
   const happLinkEnabled = subSettings.happLinkEnable === true;
@@ -376,6 +382,7 @@ function ClientQrModalContent({
   const hasAnything =
     !!subLink ||
     !!subJsonLink ||
+    !!subClashLink ||
     wgConfigs.length > 0 ||
     awgConfigs.length > 0 ||
     !!tuicConfigText ||
@@ -443,6 +450,13 @@ function ClientQrModalContent({
         key: 'subJson',
         label: `${t('subscription.title')} (JSON)`,
         children: <QrPanel value={subJsonLink} remark={`${client?.email || ''} — JSON`} />,
+      });
+    }
+    if (subClashLink) {
+      out.push({
+        key: 'subClash',
+        label: `${t('subscription.title')} (Clash)`,
+        children: <QrPanel value={subClashLink} remark={`${client?.email || ''} — Clash`} />,
       });
     }
     links.forEach((link, idx) => {
@@ -521,6 +535,7 @@ function ClientQrModalContent({
   }, [
     subLink,
     subJsonLink,
+    subClashLink,
     variant,
     happLink,
     happLoading,

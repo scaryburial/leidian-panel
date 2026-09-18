@@ -5,6 +5,7 @@ import {
   DeleteOutlined,
   EditOutlined,
   InfoCircleOutlined,
+  LinkOutlined,
   QrcodeOutlined,
   RetweetOutlined,
 } from '@ant-design/icons';
@@ -39,6 +40,16 @@ export const ClientRowActions = memo(function ClientRowActions({
   const { t } = useTranslation();
   return (
     <Space size={4}>
+      <Tooltip title={t('pages.clients.shareSubscribe')}>
+        <Button
+          size="small"
+          type="text"
+          style={ICON_BUTTON_STYLE}
+          icon={<LinkOutlined />}
+          aria-label={t('pages.clients.shareSubscribe')}
+          onClick={() => onShowQr(email)}
+        />
+      </Tooltip>
       <Tooltip title={t('pages.clients.qrCode')}>
         <Button
           size="small"

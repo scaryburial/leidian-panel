@@ -17,6 +17,7 @@ import base64
 import http.cookiejar
 import json
 import os
+import random
 import re
 import subprocess
 import sys
@@ -93,6 +94,12 @@ def b64(n):
     return base64.b64encode(os.urandom(n)).decode()
 
 
+def subid():
+    # Mirrors the panel's own 16-char [0-9a-z] subscription id, so every preset
+    # client gets its own shareable subscription link on first install.
+    return "".join(random.choice("0123456789abcdefghijklmnopqrstuvwxyz") for _ in range(16))
+
+
 def reality_keys():
     out = subprocess.Popen([XRAY, "x25519"], stdout=subprocess.PIPE).stdout.read().decode()
     priv = re.search(r"PrivateKey:\s*(\S+)", out).group(1)
@@ -102,20 +109,20 @@ def reality_keys():
 
 def vless_settings(email):
     client = {"id": uuid(), "flow": "xtls-rprx-vision", "email": email, "limitIp": 0, "totalGB": 0,
-              "expiryTime": 0, "enable": True, "tgId": 0, "subId": "", "comment": "", "reset": 0}
+              "expiryTime": 0, "enable": True, "tgId": 0, "subId": subid(), "comment": "", "reset": 0}
     return json.dumps({"clients": [client], "decryption": "none", "fallbacks": [], "encryption": ""})
 
 
 def vmess_settings(email):
     client = {"id": uuid(), "alterId": 0, "email": email, "security": "auto", "limitIp": 0, "totalGB": 0,
-              "expiryTime": 0, "enable": True, "tgId": 0, "subId": "", "comment": "", "reset": 0}
+              "expiryTime": 0, "enable": True, "tgId": 0, "subId": subid(), "comment": "", "reset": 0}
     return json.dumps({"clients": [client]})
 
 
 def ss_settings(method, keylen, net, email):
     pwd = b64(keylen)
     return json.dumps({"method": method, "password": pwd, "network": net, "ivCheck": False,
-                       "clients": [{"email": email, "password": pwd, "method": method,
+                       "clients": [{"email": email, "password": pwd, "method": method, "subId": subid(),
                                     "limitIp": 0, "totalGB": 0, "expiryTime": 0, "enable": True}]})
 
 
