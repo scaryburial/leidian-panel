@@ -52,3 +52,7 @@ dist_tmp_ui3344
 # screenshots / temp
 frontend/_shot/
 frontend/_shot.mjs
+
+# python
+__pycache__/
+*.pyc
