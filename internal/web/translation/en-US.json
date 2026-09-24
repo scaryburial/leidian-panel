@@ -2269,7 +2269,9 @@
       "testFail": "Relay test failed",
       "ruleTitle": "Upstream",
       "addRule": "Add upstream",
-      "removeRule": "Remove"
+      "removeRule": "Remove",
+      "remark": "Note",
+      "remarkPlaceholder": "e.g. static-1 → brother, bought 2026-09"
     }
   },
   "tgbot": {

@@ -2269,7 +2269,9 @@
       "testFail": "中转测试失败",
       "ruleTitle": "上游",
       "addRule": "添加上游",
-      "removeRule": "删除"
+      "removeRule": "删除",
+      "remark": "备注",
+      "remarkPlaceholder": "例如：静态IP1 → 给哥哥，2026-09 买的"
     }
   },
   "tgbot": {

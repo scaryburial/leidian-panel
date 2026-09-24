@@ -30,6 +30,7 @@ interface RelayRule {
   scope: RelayScope;
   emails: string[];
   inbounds: string[];
+  remark?: string;
 }
 
 interface Inbound {
@@ -51,6 +52,7 @@ const NEW_RULE: RelayRule = {
   scope: 'all',
   emails: [],
   inbounds: [],
+  remark: '',
 };
 
 export default function RelayPage() {
@@ -162,7 +164,7 @@ export default function RelayPage() {
                     key={field.key}
                     size="small"
                     style={{ marginBottom: 12 }}
-                    title={`${t('pages.relay.ruleTitle')} #${index + 1}`}
+                    title={`${t('pages.relay.ruleTitle')} #${index + 1}${rules[index]?.remark ? ` · ${rules[index]!.remark}` : ''}`}
                     extra={
                       <Space>
                         <Button
@@ -186,6 +188,9 @@ export default function RelayPage() {
                   >
                     <Form.Item name={[field.name, 'id']} hidden>
                       <Input />
+                    </Form.Item>
+                    <Form.Item name={[field.name, 'remark']} label={t('pages.relay.remark')}>
+                      <Input placeholder={t('pages.relay.remarkPlaceholder')} autoComplete="off" style={{ maxWidth: 480 }} />
                     </Form.Item>
                     <Space wrap align="start" size="large">
                       <Form.Item name={[field.name, 'enable']} label={t('pages.relay.enable')} valuePropName="checked">

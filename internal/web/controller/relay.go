@@ -36,6 +36,7 @@ type RelayRule struct {
 	Scope    string   `json:"scope"` // "all" | "emails" | "inbounds"
 	Emails   []string `json:"emails"`
 	Inbounds []string `json:"inbounds"` // inbound tags
+	Remark   string   `json:"remark"`   // operator note, panel-only
 }
 
 // RelayConfig persists the ordered list of relay rules.
@@ -144,6 +145,7 @@ func normalizeRelayRules(rules []RelayRule) ([]RelayRule, error) {
 			r.Scope = "all"
 		}
 		r.Host = strings.TrimSpace(r.Host)
+		r.Remark = strings.TrimSpace(r.Remark)
 		r.Emails = cleanRelayList(r.Emails)
 		r.Inbounds = cleanRelayList(r.Inbounds)
 		if r.Enable {
