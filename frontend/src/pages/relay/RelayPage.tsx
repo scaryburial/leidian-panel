@@ -13,12 +13,14 @@ import {
   Switch,
   message,
 } from 'antd';
+import { DeleteOutlined, PlusOutlined } from '@ant-design/icons';
 
 import { HttpUtil } from '@/utils';
 
 type RelayScope = 'all' | 'emails' | 'inbounds';
 
-interface RelayConfig {
+interface RelayRule {
+  id?: string;
   enable: boolean;
   type: 'socks' | 'http';
   host: string;
@@ -39,8 +41,8 @@ interface Inbound {
   settings?: string;
 }
 
-const DEFAULT: RelayConfig = {
-  enable: false,
+const NEW_RULE: RelayRule = {
+  enable: true,
   type: 'socks',
   host: '',
   port: 1080,
@@ -53,25 +55,25 @@ const DEFAULT: RelayConfig = {
 
 export default function RelayPage() {
   const { t } = useTranslation();
-  const [form] = Form.useForm<RelayConfig>();
+  const [form] = Form.useForm<{ rules: RelayRule[] }>();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [testing, setTesting] = useState(false);
-  const [scope, setScope] = useState<RelayScope>('all');
+  const [testingIdx, setTestingIdx] = useState<number | null>(null);
   const [inbounds, setInbounds] = useState<Inbound[]>([]);
   const [emails, setEmails] = useState<string[]>([]);
+  const watched = Form.useWatch('rules', form);
+  const rules = (watched ?? []) as RelayRule[];
 
   useEffect(() => {
     let cancelled = false;
     void (async () => {
       const [cfg, ib] = await Promise.all([
-        HttpUtil.get<RelayConfig>('/panel/api/relay/config', undefined, { silent: true }),
+        HttpUtil.get<{ rules: RelayRule[] }>('/panel/api/relay/config', undefined, {
+          silent: true,
+        }),
         HttpUtil.get<Inbound[]>('/panel/api/inbounds/list', undefined, { silent: true }),
       ]);
       if (cancelled) return;
-      const value = cfg?.success && cfg.obj ? { ...DEFAULT, ...cfg.obj } : DEFAULT;
-      form.setFieldsValue(value);
-      setScope(value.scope || 'all');
       const list = (Array.isArray(ib?.obj) ? ib.obj : []) as Inbound[];
       setInbounds(list);
       const set = new Set<string>();
@@ -85,6 +87,8 @@ export default function RelayPage() {
         }
       }
       setEmails([...set].sort());
+      const loaded = cfg?.success && cfg.obj?.rules?.length ? cfg.obj.rules : [NEW_RULE];
+      form.setFieldsValue({ rules: loaded });
       setLoading(false);
     })();
     return () => {
@@ -104,20 +108,25 @@ export default function RelayPage() {
 
   async function save() {
     const values = await form.validateFields();
-    values.scope = scope;
     setSaving(true);
-    const r = await HttpUtil.post('/panel/api/relay/config', values);
+    const r = await HttpUtil.post('/panel/api/relay/config', { rules: values.rules ?? [] });
     setSaving(false);
     if (r.success) message.success(t('pages.relay.saved'));
   }
 
-  async function test() {
-    const values = await form.validateFields(['type', 'host', 'port', 'user', 'pass']);
-    setTesting(true);
-    const r = await HttpUtil.post<{ egressIp: string }>('/panel/api/relay/test', values, {
-      silent: true,
-    });
-    setTesting(false);
+  async function testRule(index: number) {
+    const row = form.getFieldValue(['rules', index]) as RelayRule | undefined;
+    if (!row?.host || !row?.port) {
+      message.error(t('pages.relay.testFail'));
+      return;
+    }
+    setTestingIdx(index);
+    const r = await HttpUtil.post<{ egressIp: string }>(
+      '/panel/api/relay/test',
+      { type: row.type, host: row.host, port: row.port, user: row.user, pass: row.pass },
+      { silent: true },
+    );
+    setTestingIdx(null);
     if (r.success && r.obj?.egressIp) {
       message.success(t('pages.relay.testOk', { ip: r.obj.egressIp }));
     } else {
@@ -130,14 +139,9 @@ export default function RelayPage() {
       title={t('menu.relay')}
       loading={loading}
       extra={
-        <Space>
-          <Button onClick={test} loading={testing}>
-            {t('pages.relay.test')}
-          </Button>
-          <Button type="primary" onClick={save} loading={saving}>
-            {t('pages.relay.save')}
-          </Button>
-        </Space>
+        <Button type="primary" onClick={save} loading={saving}>
+          {t('pages.relay.save')}
+        </Button>
       }
     >
       <Alert
@@ -147,62 +151,101 @@ export default function RelayPage() {
         message={t('pages.relay.introTitle')}
         description={t('pages.relay.intro')}
       />
-      <Form form={form} layout="vertical" initialValues={DEFAULT}>
-        <Form.Item name="enable" label={t('pages.relay.enable')} valuePropName="checked">
-          <Switch />
-        </Form.Item>
-        <Form.Item name="type" label={t('pages.relay.type')}>
-          <Radio.Group optionType="button" buttonStyle="solid">
-            <Radio.Button value="socks">SOCKS5</Radio.Button>
-            <Radio.Button value="http">HTTP</Radio.Button>
-          </Radio.Group>
-        </Form.Item>
-        <Space align="start" size="large" wrap>
-          <Form.Item
-            name="host"
-            label={t('pages.relay.host')}
-            rules={[{ required: false }]}
-            style={{ minWidth: 260 }}
-          >
-            <Input placeholder="1.2.3.4" autoComplete="off" />
-          </Form.Item>
-          <Form.Item name="port" label={t('pages.relay.port')}>
-            <InputNumber min={1} max={65535} style={{ width: 140 }} />
-          </Form.Item>
-          <Form.Item name="user" label={t('pages.relay.user')}>
-            <Input autoComplete="off" />
-          </Form.Item>
-          <Form.Item name="pass" label={t('pages.relay.pass')}>
-            <Input.Password autoComplete="new-password" />
-          </Form.Item>
-        </Space>
-        <Form.Item label={t('pages.relay.scope')}>
-          <Radio.Group value={scope} onChange={(e) => setScope(e.target.value)}>
-            <Radio value="all">{t('pages.relay.scopeAll')}</Radio>
-            <Radio value="emails">{t('pages.relay.scopeEmails')}</Radio>
-            <Radio value="inbounds">{t('pages.relay.scopeInbounds')}</Radio>
-          </Radio.Group>
-        </Form.Item>
-        {scope === 'emails' && (
-          <Form.Item name="emails" label={t('pages.relay.emails')}>
-            <Select
-              mode="tags"
-              options={emailOptions}
-              placeholder={t('pages.relay.emailsPlaceholder')}
-              style={{ maxWidth: 640 }}
-            />
-          </Form.Item>
-        )}
-        {scope === 'inbounds' && (
-          <Form.Item name="inbounds" label={t('pages.relay.inbounds')}>
-            <Select
-              mode="multiple"
-              options={inboundOptions}
-              placeholder={t('pages.relay.inboundsPlaceholder')}
-              style={{ maxWidth: 640 }}
-            />
-          </Form.Item>
-        )}
+      <Form form={form} layout="vertical" initialValues={{ rules: [NEW_RULE] }}>
+        <Form.List name="rules">
+          {(fields, { add, remove }) => (
+            <>
+              {fields.map((field, index) => {
+                const scope = rules[index]?.scope ?? 'all';
+                return (
+                  <Card
+                    key={field.key}
+                    size="small"
+                    style={{ marginBottom: 12 }}
+                    title={`${t('pages.relay.ruleTitle')} #${index + 1}`}
+                    extra={
+                      <Space>
+                        <Button
+                          size="small"
+                          onClick={() => testRule(index)}
+                          loading={testingIdx === index}
+                        >
+                          {t('pages.relay.test')}
+                        </Button>
+                        <Button
+                          size="small"
+                          danger
+                          icon={<DeleteOutlined />}
+                          onClick={() => remove(field.name)}
+                          disabled={fields.length <= 1}
+                        >
+                          {t('pages.relay.removeRule')}
+                        </Button>
+                      </Space>
+                    }
+                  >
+                    <Form.Item name={[field.name, 'id']} hidden>
+                      <Input />
+                    </Form.Item>
+                    <Space wrap align="start" size="large">
+                      <Form.Item name={[field.name, 'enable']} label={t('pages.relay.enable')} valuePropName="checked">
+                        <Switch />
+                      </Form.Item>
+                      <Form.Item name={[field.name, 'type']} label={t('pages.relay.type')}>
+                        <Radio.Group optionType="button" buttonStyle="solid">
+                          <Radio.Button value="socks">SOCKS5</Radio.Button>
+                          <Radio.Button value="http">HTTP</Radio.Button>
+                        </Radio.Group>
+                      </Form.Item>
+                      <Form.Item name={[field.name, 'host']} label={t('pages.relay.host')}>
+                        <Input placeholder="1.2.3.4" autoComplete="off" style={{ width: 200 }} />
+                      </Form.Item>
+                      <Form.Item name={[field.name, 'port']} label={t('pages.relay.port')}>
+                        <InputNumber min={1} max={65535} style={{ width: 120 }} />
+                      </Form.Item>
+                      <Form.Item name={[field.name, 'user']} label={t('pages.relay.user')}>
+                        <Input autoComplete="off" style={{ width: 160 }} />
+                      </Form.Item>
+                      <Form.Item name={[field.name, 'pass']} label={t('pages.relay.pass')}>
+                        <Input.Password autoComplete="new-password" style={{ width: 160 }} />
+                      </Form.Item>
+                    </Space>
+                    <Form.Item name={[field.name, 'scope']} label={t('pages.relay.scope')}>
+                      <Radio.Group>
+                        <Radio value="all">{t('pages.relay.scopeAll')}</Radio>
+                        <Radio value="emails">{t('pages.relay.scopeEmails')}</Radio>
+                        <Radio value="inbounds">{t('pages.relay.scopeInbounds')}</Radio>
+                      </Radio.Group>
+                    </Form.Item>
+                    {scope === 'emails' && (
+                      <Form.Item name={[field.name, 'emails']} label={t('pages.relay.emails')}>
+                        <Select
+                          mode="tags"
+                          options={emailOptions}
+                          placeholder={t('pages.relay.emailsPlaceholder')}
+                          style={{ maxWidth: 640 }}
+                        />
+                      </Form.Item>
+                    )}
+                    {scope === 'inbounds' && (
+                      <Form.Item name={[field.name, 'inbounds']} label={t('pages.relay.inbounds')}>
+                        <Select
+                          mode="multiple"
+                          options={inboundOptions}
+                          placeholder={t('pages.relay.inboundsPlaceholder')}
+                          style={{ maxWidth: 640 }}
+                        />
+                      </Form.Item>
+                    )}
+                  </Card>
+                );
+              })}
+              <Button type="dashed" block icon={<PlusOutlined />} onClick={() => add({ ...NEW_RULE })}>
+                {t('pages.relay.addRule')}
+              </Button>
+            </>
+          )}
+        </Form.List>
       </Form>
     </Card>
   );

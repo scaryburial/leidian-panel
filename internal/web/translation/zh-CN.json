@@ -2247,7 +2247,7 @@
     },
     "relay": {
       "introTitle": "出口中转",
-      "intro": "把所选客户端的流量经你填写的 SOCKS5 / HTTP 上游代理出网。客户端节点链接不变，中转在服务端完成。",
+      "intro": "下面每条上游（SOCKS5 / HTTP）把所选客户端的流量经它出网。客户端节点链接不变，中转在服务端完成。",
       "enable": "启用中转",
       "type": "上游类型",
       "host": "地址",
@@ -2266,7 +2266,10 @@
       "save": "保存",
       "saved": "已保存",
       "testOk": "中转可用，出口 IP：{ip}",
-      "testFail": "中转测试失败"
+      "testFail": "中转测试失败",
+      "ruleTitle": "上游",
+      "addRule": "添加上游",
+      "removeRule": "删除"
     }
   },
   "tgbot": {

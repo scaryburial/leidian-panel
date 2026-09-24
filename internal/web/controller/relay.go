@@ -18,13 +18,15 @@ import (
 )
 
 const (
-	relayOutboundTag = "ui3344-relay"
-	relayTestURL     = "https://api.ipify.org"
+	// relayTagPrefix scopes the outbound tags and routing rules this feature
+	// owns, so a save can clean up everything it previously injected.
+	relayTagPrefix = "ui3344-relay"
+	relayTestURL   = "https://api.ipify.org"
 )
 
-// RelayConfig is the persisted 出口中转 configuration: the panel relays every
-// (or the selected) client's egress through an upstream SOCKS5/HTTP proxy.
-type RelayConfig struct {
+// RelayRule is one upstream (SOCKS5/HTTP) plus the clients it applies to.
+type RelayRule struct {
+	ID       string   `json:"id"`
 	Enable   bool     `json:"enable"`
 	Type     string   `json:"type"` // "socks" | "http"
 	Host     string   `json:"host"`
@@ -34,6 +36,11 @@ type RelayConfig struct {
 	Scope    string   `json:"scope"` // "all" | "emails" | "inbounds"
 	Emails   []string `json:"emails"`
 	Inbounds []string `json:"inbounds"` // inbound tags
+}
+
+// RelayConfig persists the ordered list of relay rules.
+type RelayConfig struct {
+	Rules []RelayRule `json:"rules"`
 }
 
 // RelayController exposes a simplified outbound-relay (中转) API on top of the
@@ -53,12 +60,15 @@ func NewRelayController(g *gin.RouterGroup) *RelayController {
 }
 
 func (a *RelayController) getConfig(c *gin.Context) {
-	cfg := RelayConfig{Type: "socks", Scope: "all", Port: 1080}
+	cfg := RelayConfig{Rules: []RelayRule{}}
 	if raw, err := a.settingService.GetRelayConfig(); err == nil && strings.TrimSpace(raw) != "" {
 		if uerr := json.Unmarshal([]byte(raw), &cfg); uerr != nil {
 			jsonMsg(c, "加载中转配置失败", uerr)
 			return
 		}
+	}
+	if cfg.Rules == nil {
+		cfg.Rules = []RelayRule{}
 	}
 	jsonObj(c, cfg, nil)
 }
@@ -69,32 +79,13 @@ func (a *RelayController) saveConfig(c *gin.Context) {
 		jsonMsg(c, "参数错误", err)
 		return
 	}
-	cfg.Type = strings.ToLower(strings.TrimSpace(cfg.Type))
-	if cfg.Type != "socks" && cfg.Type != "http" {
-		cfg.Type = "socks"
+	normalized, err := normalizeRelayRules(cfg.Rules)
+	if err != nil {
+		jsonMsg(c, err.Error(), nil)
+		return
 	}
-	switch cfg.Scope {
-	case "emails", "inbounds":
-	default:
-		cfg.Scope = "all"
-	}
-	cfg.Host = strings.TrimSpace(cfg.Host)
-	cfg.Emails = cleanRelayList(cfg.Emails)
-	cfg.Inbounds = cleanRelayList(cfg.Inbounds)
-	if cfg.Enable {
-		if cfg.Host == "" || cfg.Port <= 0 || cfg.Port > 65535 {
-			jsonMsg(c, "请填写正确的上游地址与端口", nil)
-			return
-		}
-		if cfg.Scope == "emails" && len(cfg.Emails) == 0 {
-			jsonMsg(c, "请至少选择一个客户端", nil)
-			return
-		}
-		if cfg.Scope == "inbounds" && len(cfg.Inbounds) == 0 {
-			jsonMsg(c, "请至少选择一个入站", nil)
-			return
-		}
-	}
+	cfg.Rules = normalized
+
 	template, err := a.settingService.GetXrayConfigTemplate()
 	if err != nil {
 		jsonMsg(c, "读取 Xray 配置失败", err)
@@ -122,12 +113,12 @@ func (a *RelayController) saveConfig(c *gin.Context) {
 }
 
 func (a *RelayController) test(c *gin.Context) {
-	var cfg RelayConfig
-	if err := c.ShouldBindJSON(&cfg); err != nil {
+	var rule RelayRule
+	if err := c.ShouldBindJSON(&rule); err != nil {
 		jsonMsg(c, "参数错误", err)
 		return
 	}
-	ip, err := testRelay(cfg)
+	ip, err := testRelay(rule)
 	if err != nil {
 		jsonMsg(c, "测试失败", err)
 		return
@@ -135,30 +126,98 @@ func (a *RelayController) test(c *gin.Context) {
 	jsonObj(c, map[string]any{"egressIp": ip}, nil)
 }
 
-// applyRelayToTemplate removes any previous relay outbound/rule and, when
-// enabled, injects the current one. The relay outbound is always tagged so it
-// can be found again regardless of other edits to the template.
+func normalizeRelayRules(rules []RelayRule) ([]RelayRule, error) {
+	out := make([]RelayRule, 0, len(rules))
+	for i := range rules {
+		r := rules[i]
+		r.ID = sanitizeRelayID(r.ID)
+		if r.ID == "" {
+			r.ID = "r" + strconv.FormatInt(time.Now().UnixNano(), 36) + strconv.Itoa(i)
+		}
+		r.Type = strings.ToLower(strings.TrimSpace(r.Type))
+		if r.Type != "socks" && r.Type != "http" {
+			r.Type = "socks"
+		}
+		switch r.Scope {
+		case "emails", "inbounds":
+		default:
+			r.Scope = "all"
+		}
+		r.Host = strings.TrimSpace(r.Host)
+		r.Emails = cleanRelayList(r.Emails)
+		r.Inbounds = cleanRelayList(r.Inbounds)
+		if r.Enable {
+			if r.Host == "" || r.Port <= 0 || r.Port > 65535 {
+				return nil, errRelay("请为每条启用中的上游填写正确的地址与端口")
+			}
+			if r.Scope == "emails" && len(r.Emails) == 0 {
+				return nil, errRelay("有一条上游选择了「指定客户端」但没选客户端")
+			}
+			if r.Scope == "inbounds" && len(r.Inbounds) == 0 {
+				return nil, errRelay("有一条上游选择了「指定入站」但没选入站")
+			}
+		}
+		out = append(out, r)
+	}
+	return out, nil
+}
+
+type relayError string
+
+func (e relayError) Error() string { return string(e) }
+
+func errRelay(msg string) error { return relayError(msg) }
+
+func sanitizeRelayID(id string) string {
+	var b strings.Builder
+	for _, r := range strings.TrimSpace(id) {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '-' || r == '_' {
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
+}
+
+func relayTag(id string) string { return relayTagPrefix + "-" + id }
+
+// applyRelayToTemplate drops every previously-injected relay outbound/rule and
+// re-adds the enabled ones. Catch-all ("all") rules are appended last so they
+// never shadow a more specific rule.
 func applyRelayToTemplate(template string, cfg RelayConfig) (string, error) {
 	var doc map[string]any
 	if err := json.Unmarshal([]byte(template), &doc); err != nil {
 		return "", err
 	}
 	outbounds, _ := doc["outbounds"].([]any)
-	outbounds = removeOutboundByTag(outbounds, relayOutboundTag)
-	if cfg.Enable {
-		outbounds = append(outbounds, relayOutbound(cfg))
-	}
-	doc["outbounds"] = outbounds
+	outbounds = removeOutboundsByTagPrefix(outbounds, relayTagPrefix)
 
 	routing, _ := doc["routing"].(map[string]any)
 	if routing == nil {
 		routing = map[string]any{"domainStrategy": "AsIs"}
 	}
 	rules, _ := routing["rules"].([]any)
-	rules = removeRulesByOutbound(rules, relayOutboundTag)
-	if cfg.Enable {
-		rules = append(rules, relayRule(cfg))
+	rules = removeRulesByOutboundPrefix(rules, relayTagPrefix)
+
+	enabled := make([]RelayRule, 0, len(cfg.Rules))
+	for _, r := range cfg.Rules {
+		if r.Enable {
+			enabled = append(enabled, r)
+		}
 	}
+	// specific rules first, catch-all last
+	for pass := 0; pass < 2; pass++ {
+		wantAll := pass == 1
+		for _, r := range enabled {
+			if (r.Scope == "all") != wantAll {
+				continue
+			}
+			tag := relayTag(r.ID)
+			outbounds = append(outbounds, relayOutbound(tag, r))
+			rules = append(rules, relayRule(tag, r))
+		}
+	}
+
+	doc["outbounds"] = outbounds
 	routing["rules"] = rules
 	doc["routing"] = routing
 
@@ -169,34 +228,34 @@ func applyRelayToTemplate(template string, cfg RelayConfig) (string, error) {
 	return string(out), nil
 }
 
-func relayOutbound(cfg RelayConfig) map[string]any {
-	server := map[string]any{"address": cfg.Host, "port": cfg.Port}
-	if cfg.User != "" || cfg.Pass != "" {
-		server["users"] = []any{map[string]any{"user": cfg.User, "pass": cfg.Pass}}
+func relayOutbound(tag string, r RelayRule) map[string]any {
+	server := map[string]any{"address": r.Host, "port": r.Port}
+	if r.User != "" || r.Pass != "" {
+		server["users"] = []any{map[string]any{"user": r.User, "pass": r.Pass}}
 	}
 	return map[string]any{
-		"tag":      relayOutboundTag,
-		"protocol": cfg.Type,
+		"tag":      tag,
+		"protocol": r.Type,
 		"settings": map[string]any{"servers": []any{server}},
 	}
 }
 
-func relayRule(cfg RelayConfig) map[string]any {
-	rule := map[string]any{"type": "field", "outboundTag": relayOutboundTag}
-	switch cfg.Scope {
+func relayRule(tag string, r RelayRule) map[string]any {
+	rule := map[string]any{"type": "field", "outboundTag": tag}
+	switch r.Scope {
 	case "emails":
-		rule["user"] = toAnyStrings(cfg.Emails)
+		rule["user"] = toAnyStrings(r.Emails)
 	case "inbounds":
-		rule["inboundTag"] = toAnyStrings(cfg.Inbounds)
+		rule["inboundTag"] = toAnyStrings(r.Inbounds)
 	}
 	return rule
 }
 
-func removeOutboundByTag(outbounds []any, tag string) []any {
+func removeOutboundsByTagPrefix(outbounds []any, prefix string) []any {
 	out := make([]any, 0, len(outbounds))
 	for _, o := range outbounds {
 		if m, ok := o.(map[string]any); ok {
-			if t, _ := m["tag"].(string); t == tag {
+			if t, _ := m["tag"].(string); strings.HasPrefix(t, prefix) {
 				continue
 			}
 		}
@@ -205,11 +264,11 @@ func removeOutboundByTag(outbounds []any, tag string) []any {
 	return out
 }
 
-func removeRulesByOutbound(rules []any, tag string) []any {
+func removeRulesByOutboundPrefix(rules []any, prefix string) []any {
 	out := make([]any, 0, len(rules))
 	for _, r := range rules {
 		if m, ok := r.(map[string]any); ok {
-			if t, _ := m["outboundTag"].(string); t == tag {
+			if t, _ := m["outboundTag"].(string); strings.HasPrefix(t, prefix) {
 				continue
 			}
 		}
@@ -242,19 +301,19 @@ func cleanRelayList(in []string) []string {
 	return out
 }
 
-func testRelay(cfg RelayConfig) (string, error) {
-	addr := net.JoinHostPort(strings.TrimSpace(cfg.Host), strconv.Itoa(cfg.Port))
+func testRelay(r RelayRule) (string, error) {
+	addr := net.JoinHostPort(strings.TrimSpace(r.Host), strconv.Itoa(r.Port))
 	transport := &http.Transport{}
-	if cfg.Type == "http" {
+	if r.Type == "http" {
 		u := &url.URL{Scheme: "http", Host: addr}
-		if cfg.User != "" {
-			u.User = url.UserPassword(cfg.User, cfg.Pass)
+		if r.User != "" {
+			u.User = url.UserPassword(r.User, r.Pass)
 		}
 		transport.Proxy = http.ProxyURL(u)
 	} else {
 		var auth *proxy.Auth
-		if cfg.User != "" {
-			auth = &proxy.Auth{User: cfg.User, Password: cfg.Pass}
+		if r.User != "" {
+			auth = &proxy.Auth{User: r.User, Password: r.Pass}
 		}
 		dialer, err := proxy.SOCKS5("tcp", addr, auth, proxy.Direct)
 		if err != nil {

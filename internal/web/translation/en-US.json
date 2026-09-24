@@ -2247,7 +2247,7 @@
     },
     "relay": {
       "introTitle": "Outbound relay (中转)",
-      "intro": "Route the selected clients' traffic out through an upstream SOCKS5/HTTP proxy. Client links stay unchanged — relaying happens on the server.",
+      "intro": "Each upstream (SOCKS5/HTTP) below relays the clients you pick through it. Client links stay unchanged — relaying happens on the server.",
       "enable": "Enable relay",
       "type": "Upstream type",
       "host": "Address",
@@ -2266,7 +2266,10 @@
       "save": "Save",
       "saved": "Saved",
       "testOk": "Relay works — egress IP: {ip}",
-      "testFail": "Relay test failed"
+      "testFail": "Relay test failed",
+      "ruleTitle": "Upstream",
+      "addRule": "Add upstream",
+      "removeRule": "Remove"
     }
   },
   "tgbot": {
