@@ -113,7 +113,8 @@
     "openMenu": "Open menu",
     "pinSidebar": "Pin sidebar",
     "unpinSidebar": "Unpin sidebar",
-    "subFormats": "Sub Formats"
+    "subFormats": "Sub Formats",
+    "relay": "Relay"
   },
   "pages": {
     "login": {
@@ -2243,6 +2244,29 @@
       },
       "defaultOutbound": "Default Outbound",
       "defaultOutboundDesc": "Traffic that does not match any routing rule uses this outbound (Xray uses the first outbound in the list)."
+    },
+    "relay": {
+      "introTitle": "Outbound relay (中转)",
+      "intro": "Route the selected clients' traffic out through an upstream SOCKS5/HTTP proxy. Client links stay unchanged — relaying happens on the server.",
+      "enable": "Enable relay",
+      "type": "Upstream type",
+      "host": "Address",
+      "port": "Port",
+      "user": "Username",
+      "pass": "Password",
+      "scope": "Apply to",
+      "scopeAll": "All clients",
+      "scopeEmails": "Selected clients",
+      "scopeInbounds": "Selected inbounds",
+      "emails": "Clients (email)",
+      "emailsPlaceholder": "Pick or type emails",
+      "inbounds": "Inbounds",
+      "inboundsPlaceholder": "Pick inbounds",
+      "test": "Test connectivity",
+      "save": "Save",
+      "saved": "Saved",
+      "testOk": "Relay works — egress IP: {ip}",
+      "testFail": "Relay test failed"
     }
   },
   "tgbot": {

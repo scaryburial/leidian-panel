@@ -12,6 +12,7 @@ const NodesPage = lazy(() => import('@/pages/nodes/NodesPage'));
 const HostsPage = lazy(() => import('@/pages/hosts/HostsPage'));
 const SettingsPage = lazy(() => import('@/pages/settings/SettingsPage'));
 const XrayPage = lazy(() => import('@/pages/xray/XrayPage'));
+const RelayPage = lazy(() => import('@/pages/relay/RelayPage'));
 const ApiDocsPage = lazy(() => import('@/pages/api-docs/ApiDocsPage'));
 
 function withSuspense(node: React.ReactNode) {
@@ -50,6 +51,7 @@ const routes: RouteObject[] = [
       { path: 'xray', element: withSuspense(<XrayPage />) },
       { path: 'outbound', element: withSuspense(<XrayPage />) },
       { path: 'routing', element: withSuspense(<XrayPage />) },
+      { path: 'relay', element: withSuspense(<RelayPage />) },
       { path: 'api-docs', element: withSuspense(<ApiDocsPage />) },
     ],
   },

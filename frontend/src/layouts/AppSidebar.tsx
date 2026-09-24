@@ -7,6 +7,7 @@ import type { MenuProps } from 'antd';
 import {
   ApiOutlined,
   ApartmentOutlined,
+  BranchesOutlined,
   CloseOutlined,
   CloudServerOutlined,
   ClusterOutlined,
@@ -64,7 +65,8 @@ type IconName =
   | 'logout'
   | 'apidocs'
   | 'outbound'
-  | 'routing';
+  | 'routing'
+  | 'relay';
 
 const iconByName: Record<IconName, ComponentType> = {
   dashboard: DashboardOutlined,
@@ -79,6 +81,7 @@ const iconByName: Record<IconName, ComponentType> = {
   apidocs: ApiOutlined,
   outbound: ExportOutlined,
   routing: SwapOutlined,
+  relay: BranchesOutlined,
 };
 
 function VersionBadge({ version, collapsed }: { version: string; collapsed?: boolean }) {
@@ -185,6 +188,7 @@ export default function AppSidebar() {
       { key: '/hosts', icon: 'hosts', title: t('menu.hosts') },
       { key: '/outbound', icon: 'outbound', title: t('menu.outbounds') },
       { key: '/routing', icon: 'routing', title: t('menu.routing') },
+      { key: '/relay', icon: 'relay', title: t('menu.relay') },
       { key: '/settings', icon: 'setting', title: t('menu.settings') },
       { key: '/xray', icon: 'tool', title: t('menu.xray') },
       { key: '/api-docs', icon: 'apidocs', title: t('menu.apiDocs') },

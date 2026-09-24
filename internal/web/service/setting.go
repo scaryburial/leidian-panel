@@ -54,6 +54,7 @@ var defaultValueMap = map[string]string{
 	"secret":             random.Seq(32),
 	"panelGuid":          uuid.NewString(),
 	"apiToken":           "",
+	"relayConfig":        "",
 	// Node mTLS material (opt-in). All default empty: the CA + master client
 	// cert are minted lazily on first use, and the node-side trust CA is pasted
 	// in by the operator. Kept out of entity.AllSetting so private keys never
@@ -462,6 +463,16 @@ func (s *SettingService) SetWarpUpdateInterval(val int) error {
 
 func (s *SettingService) GetXrayConfigTemplate() (string, error) {
 	return s.getString("xrayTemplateConfig")
+}
+
+// GetRelayConfig returns the persisted 出口中转 configuration (raw JSON).
+func (s *SettingService) GetRelayConfig() (string, error) {
+	return s.getString("relayConfig")
+}
+
+// SetRelayConfig persists the 出口中转 configuration (raw JSON).
+func (s *SettingService) SetRelayConfig(value string) error {
+	return s.setString("relayConfig", value)
 }
 
 func (s *SettingService) GetXrayOutboundTestUrl() (string, error) {

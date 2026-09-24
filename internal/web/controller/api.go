@@ -205,6 +205,10 @@ func (a *APIController) initRouter(g *gin.RouterGroup) {
 	a.settingController = NewSettingController(api)
 	a.xraySettingController = NewXraySettingController(api)
 
+	// 中转 API — simplified outbound relay (SOCKS5/HTTP upstream)
+	relay := api.Group("/relay")
+	NewRelayController(relay)
+
 	// Subscription balancers — client-side balancers for the JSON sub output
 	NewSubBalancerController(api)
 

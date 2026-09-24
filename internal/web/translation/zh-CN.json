@@ -113,7 +113,8 @@
     "openMenu": "打开菜单",
     "pinSidebar": "固定侧边栏",
     "unpinSidebar": "取消固定侧边栏",
-    "subFormats": "Sub Formats"
+    "subFormats": "Sub Formats",
+    "relay": "中转"
   },
   "pages": {
     "login": {
@@ -2243,6 +2244,29 @@
         "badTag": "无效的标签",
         "badVlessRoute": "请输入 0 到 65535 之间的单个数字"
       }
+    },
+    "relay": {
+      "introTitle": "出口中转",
+      "intro": "把所选客户端的流量经你填写的 SOCKS5 / HTTP 上游代理出网。客户端节点链接不变，中转在服务端完成。",
+      "enable": "启用中转",
+      "type": "上游类型",
+      "host": "地址",
+      "port": "端口",
+      "user": "用户名",
+      "pass": "密码",
+      "scope": "生效范围",
+      "scopeAll": "全部客户端",
+      "scopeEmails": "指定客户端",
+      "scopeInbounds": "指定入站",
+      "emails": "客户端（邮箱）",
+      "emailsPlaceholder": "选择或输入邮箱",
+      "inbounds": "入站",
+      "inboundsPlaceholder": "选择入站",
+      "test": "测试连通",
+      "save": "保存",
+      "saved": "已保存",
+      "testOk": "中转可用，出口 IP：{ip}",
+      "testFail": "中转测试失败"
     }
   },
   "tgbot": {
