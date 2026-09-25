@@ -1,0 +1,226 @@
+apply plugin: 'com.android.application'
+apply plugin: 'com.google.protobuf'
+apply plugin: 'dagger.hilt.android.plugin'
+apply plugin: 'com.mikepenz.aboutlibraries.plugin'
+
+def getCmdOutput = { cmd ->
+    def stdout = new ByteArrayOutputStream()
+    exec {
+        commandLine cmd
+        standardOutput = stdout
+    }
+    return stdout.toString().trim()
+}
+
+def getGitHash = { -> return getCmdOutput(["git", "rev-parse", "--short", "HEAD"]) }
+def getGitBranch = { -> return getCmdOutput(["git", "rev-parse", "--abbrev-ref", "HEAD"]) }
+
+def packageName = "com.beemdevelopment.aegis"
+def appId = "com.leidian.aegis"
+def fileProviderAuthority = "${appId}.fileprovider"
+def fileProviderAuthorityDebug = "${appId}.debug.fileprovider"
+
+android {
+    compileSdk 36
+
+    namespace packageName
+
+    defaultConfig {
+        applicationId "${appId}"
+        minSdkVersion 23
+        targetSdkVersion 36
+        versionCode 82
+        versionName "3.4.3"
+        multiDexEnabled true
+        buildConfigField "String", "GIT_HASH", "\"${getGitHash()}\""
+        buildConfigField "String", "GIT_BRANCH", "\"${getGitBranch()}\""
+        buildConfigField "java.util.concurrent.atomic.AtomicBoolean", "TEST", "new java.util.concurrent.atomic.AtomicBoolean(false)"
+
+        javaCompileOptions {
+            annotationProcessorOptions {
+                arguments = ["room.schemaLocation": "$projectDir/schemas"]
+            }
+        }
+
+        testInstrumentationRunner "com.beemdevelopment.aegis.AegisTestRunner"
+        testInstrumentationRunnerArguments clearPackageData: 'true'
+    }
+
+    testOptions {
+        execution 'ANDROIDX_TEST_ORCHESTRATOR'
+
+        unitTests {
+            all {
+                maxHeapSize "3g"
+
+                ignoreFailures false
+                testLogging {
+                    events "passed", "skipped", "failed", "standardOut", "standardError"
+
+                    showExceptions true
+                    exceptionFormat "full"
+                    showCauses true
+                    showStackTraces true
+                }
+            }
+
+            includeAndroidResources true
+        }
+    }
+
+    buildTypes {
+        debug {
+            applicationIdSuffix ".debug"
+            manifestPlaceholders = [
+                title: "雷电验证器 Dev",
+                iconName: "ic_launcher",
+                fileProviderAuthority: "${fileProviderAuthorityDebug}"
+            ]
+            buildConfigField("String", "FILE_PROVIDER_AUTHORITY", "\"${fileProviderAuthorityDebug}\"")
+            resValue "bool", "pref_secure_screen_default", "false"
+        }
+        release {
+            manifestPlaceholders = [
+                title: "雷电验证器",
+                iconName: "ic_launcher",
+                fileProviderAuthority: "${fileProviderAuthority}"
+            ]
+            buildConfigField("String", "FILE_PROVIDER_AUTHORITY", "\"${fileProviderAuthority}\"")
+            resValue "bool", "pref_secure_screen_default", "true"
+
+            minifyEnabled true
+            shrinkResources true
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+    }
+
+    // Required to make the APK reproducible
+    aaptOptions {
+        cruncherEnabled = false
+    }
+    defaultConfig {
+        vectorDrawables.generatedDensities = []
+    }
+
+    packagingOptions {
+        // R8 doesn't remove these resources, so exclude them manually. This reduces APK size by 4MB.
+        resources {
+            excludes += [
+                    '/org/bouncycastle/pqc/**/*.properties',
+                    'META-INF/versions/9/OSGI-INF/MANIFEST.MF'
+            ]
+        }
+    }
+
+    compileOptions {
+        targetCompatibility JavaVersion.VERSION_17
+        sourceCompatibility JavaVersion.VERSION_17
+        coreLibraryDesugaringEnabled true
+    }
+    lint {
+        abortOnError true
+        checkDependencies true
+    }
+    buildFeatures {
+        buildConfig true
+    }
+}
+
+protobuf {
+    protoc {
+        artifact = 'com.google.protobuf:protoc:3.25.1'
+    }
+    generateProtoTasks {
+        all().each { task ->
+            task.builtins {
+                java {
+                    option "lite"
+                }
+            }
+        }
+    }
+}
+
+aboutLibraries {
+    // Tasks for aboutLibraries are not run automatically to keep the build reproducible
+    // To update manually: ./gradlew app:exportLibraryDefinitions -PaboutLibraries.exportPath=src/main/res/raw
+    prettyPrint = true
+    configPath = "app/config"
+    fetchRemoteFunding = false
+    registerAndroidTasks = false
+    exclusionPatterns = [~"javax.annotation.*"]
+    duplicationMode = com.mikepenz.aboutlibraries.plugin.DuplicateMode.MERGE
+}
+
+dependencies {
+    def cameraxVersion = '1.4.2'
+    def glideVersion = '4.16.0'
+    def guavaVersion = '33.4.8'
+    def hiltVersion = '2.56.2'
+    def junitVersion = '4.13.2'
+    def libsuVersion = '6.0.0'
+    def roomVersion = '2.7.1'
+
+    annotationProcessor 'androidx.annotation:annotation:1.9.1'
+    annotationProcessor "androidx.room:room-compiler:$roomVersion"
+    annotationProcessor "com.google.dagger:hilt-compiler:$hiltVersion"
+    annotationProcessor "com.github.bumptech.glide:compiler:${glideVersion}"
+
+    implementation fileTree(dir: 'libs', include: ['*.jar'])
+    implementation 'androidx.activity:activity:1.10.1'
+    implementation 'androidx.appcompat:appcompat:1.7.0'
+    implementation "androidx.biometric:biometric:1.1.0"
+    implementation "androidx.camera:camera-camera2:$cameraxVersion"
+    implementation "androidx.camera:camera-lifecycle:$cameraxVersion"
+    implementation "androidx.camera:camera-view:$cameraxVersion"
+    implementation 'androidx.core:core:1.16.0'
+    implementation 'androidx.constraintlayout:constraintlayout:2.2.1'
+    implementation 'androidx.documentfile:documentfile:1.1.0'
+    implementation 'androidx.lifecycle:lifecycle-process:2.9.0'
+    implementation "androidx.preference:preference:1.2.1"
+    implementation 'androidx.recyclerview:recyclerview:1.4.0'
+    implementation "androidx.room:room-runtime:$roomVersion"
+    implementation 'androidx.viewpager2:viewpager2:1.1.0'
+    implementation 'com.caverock:androidsvg-aar:1.4'
+    implementation "com.google.dagger:hilt-android:$hiltVersion"
+    implementation 'com.github.avito-tech:krop:0.52'
+    implementation "com.github.bumptech.glide:annotations:${glideVersion}"
+    implementation "com.github.bumptech.glide:glide:${glideVersion}"
+    implementation("com.github.bumptech.glide:recyclerview-integration:${glideVersion}") {
+        transitive = false
+    }
+    implementation "com.github.topjohnwu.libsu:core:${libsuVersion}"
+    implementation "com.github.topjohnwu.libsu:io:${libsuVersion}"
+    implementation "com.google.guava:guava:${guavaVersion}-android"
+    implementation 'com.google.android.material:material:1.14.0'
+    implementation 'com.google.protobuf:protobuf-javalite:4.31.0'
+    implementation 'com.google.zxing:core:3.5.3'
+    implementation('com.mikepenz:aboutlibraries:11.2.3') {
+        exclude group: 'com.mikepenz', module: 'aboutlibraries-core'
+    }
+    implementation 'com.mikepenz:aboutlibraries-core-android:11.2.3'
+    implementation 'com.nulab-inc:zxcvbn:1.9.0'
+    implementation 'net.lingala.zip4j:zip4j:2.11.5'
+    implementation 'org.bouncycastle:bcprov-jdk18on:1.80'
+    implementation 'org.simpleflatmapper:sfm-csv:8.2.3'
+
+    androidTestAnnotationProcessor "com.google.dagger:hilt-android-compiler:$hiltVersion"
+    androidTestImplementation "com.google.dagger:hilt-android-testing:$hiltVersion"
+    androidTestImplementation 'androidx.test:core:1.6.1'
+    androidTestImplementation 'androidx.test:runner:1.6.2'
+    androidTestImplementation 'androidx.test:rules:1.6.1'
+    androidTestImplementation 'androidx.test.ext:junit:1.2.1'
+    androidTestImplementation 'androidx.test.espresso:espresso-core:3.6.1'
+    androidTestImplementation 'androidx.test.espresso:espresso-contrib:3.6.1'
+    androidTestImplementation 'androidx.test.espresso:espresso-intents:3.6.1'
+    androidTestImplementation "junit:junit:${junitVersion}"
+    androidTestUtil 'androidx.test:orchestrator:1.5.1'
+
+    testImplementation 'androidx.test:core:1.6.1'
+    testImplementation "com.google.guava:guava:${guavaVersion}-jre"
+    testImplementation "junit:junit:${junitVersion}"
+    testImplementation 'org.json:json:20250517'
+    testImplementation 'org.robolectric:robolectric:4.16.1'
+
+    coreLibraryDesugaring 'com.android.tools:desugar_jdk_libs:2.1.5'
+}
