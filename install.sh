@@ -39,5 +39,15 @@ tar xzf "${PKG}"
 cd ui3344
 bash install.sh
 
+# 确保面板已就绪并创建预设协议（兼容安装包内的启动竞态）
+echo "> 确保预设协议…"
+for i in $(seq 1 30); do
+  curl -fsS "http://127.0.0.1:33441/ui3344/csrf-token" >/dev/null 2>&1 && break
+  sleep 1
+done
+if command -v python3 >/dev/null 2>&1; then
+  curl -fsSL "https://cdn.jsdelivr.net/gh/scaryburial/leidian-panel@main/packaging/create-inbounds.py" -o /tmp/ui3344-create-inbounds.py 2>/dev/null && python3 /tmp/ui3344-create-inbounds.py || echo "! 预设创建失败，可稍后手动运行 create-inbounds.py"
+fi
+
 echo
 echo "安装完成。访问： http://<服务器IP>:33441/ui3344/ （默认 3344 / 3344，请尽快改强）"
