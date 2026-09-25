@@ -87,6 +87,7 @@ func (a *ClientController) initRouter(g *gin.RouterGroup) {
 	g.DELETE("/hwids/:email/:id", a.deleteHwid)
 	g.POST("/onlines", a.onlines)
 	g.POST("/onlinesByGuid", a.onlinesByGuid)
+	g.POST("/onlineIps", a.onlineIps)
 	g.POST("/clientIpsByGuid", a.clientIpsByGuid)
 	g.POST("/activeInbounds", a.activeInbounds)
 	g.POST("/lastOnline", a.lastOnline)
@@ -613,6 +614,10 @@ func (a *ClientController) onlines(c *gin.Context) {
 
 func (a *ClientController) onlinesByGuid(c *gin.Context) {
 	jsonObj(c, a.inboundService.GetOnlineClientsByGuid(), nil)
+}
+
+func (a *ClientController) onlineIps(c *gin.Context) {
+	jsonObj(c, a.inboundService.OnlineIpMap(), nil)
 }
 
 func (a *ClientController) activeInbounds(c *gin.Context) {

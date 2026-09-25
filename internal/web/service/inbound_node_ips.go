@@ -220,6 +220,8 @@ type ClientIpInfo struct {
 	IP   string `json:"ip"`
 	Time string `json:"time"`
 	Node string `json:"node"`
+	// Online is true when the core reports a live connection from this IP.
+	Online bool `json:"online"`
 	// Region is resolved offline from the bundled ip2region database.
 	Country  string `json:"country,omitempty"`
 	Province string `json:"province,omitempty"`
@@ -257,12 +259,14 @@ func (s *InboundService) GetClientIpsWithNodes(email string) ([]ClientIpInfo, er
 	guidName := s.nodeGuidNameMap()
 	localGuid, _ := (&SettingService{}).GetPanelGuid()
 
+	onlineSet := s.onlineIpSet(email)
+
 	out := make([]ClientIpInfo, 0, len(entries))
 	for _, e := range entries {
 		if e.IP == "" {
 			continue
 		}
-		info := ClientIpInfo{IP: e.IP}
+		info := ClientIpInfo{IP: e.IP, Online: onlineSet[e.IP]}
 		if region, ok := ipgeo.Lookup(e.IP); ok {
 			info.Country, info.Province, info.City, info.ISP = region.Country, region.Province, region.City, region.ISP
 		}
@@ -340,4 +344,50 @@ func pruneStaleNodeClientIps(cutoff int64) error {
 		}
 	}
 	return nil
+}
+
+// onlineIpSet returns the set of source IPs the core currently reports as
+// online for the given client email. Empty when the online-stats API is
+// unavailable (xray down / old core).
+func (s *InboundService) onlineIpSet(email string) map[string]bool {
+	out := map[string]bool{}
+	users, ok, err := (&XrayService{}).GetOnlineUsers()
+	if err != nil || !ok {
+		return out
+	}
+	for _, u := range users {
+		if u.Email != email {
+			continue
+		}
+		for _, e := range u.IPs {
+			if e.IP != "" {
+				out[e.IP] = true
+			}
+		}
+	}
+	return out
+}
+
+// OnlineIpMap returns, for every client with a live connection, the source IPs
+// the core currently sees (email -> ips). The UI uses it to show the real-time
+// online device count per client.
+func (s *InboundService) OnlineIpMap() map[string][]string {
+	out := map[string][]string{}
+	users, ok, err := (&XrayService{}).GetOnlineUsers()
+	if err != nil || !ok {
+		return out
+	}
+	for _, u := range users {
+		if u.Email == "" {
+			continue
+		}
+		ips := make([]string, 0, len(u.IPs))
+		for _, e := range u.IPs {
+			if e.IP != "" {
+				ips = append(ips, e.IP)
+			}
+		}
+		out[u.Email] = ips
+	}
+	return out
 }

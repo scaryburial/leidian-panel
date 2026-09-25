@@ -559,6 +559,29 @@ export default function ClientsPage() {
       cancelled = true;
     };
   }, [pageEmailsKey]);
+
+  // Real-time online source IPs per client, for the "online x / limit y" cell.
+  const [onlineIpsMap, setOnlineIpsMap] = useState<Record<string, string[]>>({});
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const msg = await HttpUtil.post(
+          '/panel/api/clients/onlineIps',
+          undefined,
+          { silent: true },
+        );
+        if (!cancelled) {
+          setOnlineIpsMap((msg?.obj as Record<string, string[]>) ?? {});
+        }
+      } catch {
+        // ignore transient failures; keep the last snapshot
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [onlines]);
   const inboundsById = useMemo(() => {
     const out: Record<number, InboundOption> = {};
     for (const ib of inbounds) out[ib.id] = ib;
@@ -1102,13 +1125,22 @@ export default function ClientsPage() {
                 <Tag color="red">{t('depleted')}</Tag>
               </Tooltip>
             );
-          if (record.enable && isOnline(record.email))
+          if (record.enable && isOnline(record.email)) {
+            const onlineCount = onlineIpsMap[record.email]?.length ?? 0;
+            const limit = record.limitIp ?? 0;
+            const countText =
+              onlineCount > 0 ? (limit > 0 ? ` ${onlineCount}/${limit}` : ` ${onlineCount}`) : '';
+            const tip = limit > 0 ? `${t('pages.clients.online')} / ${limit}` : t('pages.clients.online');
             return (
-              <Tag color="green" className="dot-tag">
-                <span className="online-dot" />
-                {t('pages.clients.online')}
-              </Tag>
+              <Tooltip title={tip}>
+                <Tag color="green" className="dot-tag">
+                  <span className="online-dot" />
+                  {t('pages.clients.online')}
+                  {countText}
+                </Tag>
+              </Tooltip>
             );
+          }
           if (!record.enable) return <Tag>{t('disabled')}</Tag>;
           if (bucket === 'expiring') return <Tag color="orange">{t('depletingSoon')}</Tag>;
           return (
@@ -1258,6 +1290,7 @@ export default function ClientsPage() {
       datepicker,
       trafficDiff,
       clientSpeed,
+      onlineIpsMap,
     ],
   );
 

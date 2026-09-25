@@ -861,7 +861,7 @@ export default function ClientInfoModal({
             {clientIps.map((entry, idx) => (
               <Tag
                 key={idx}
-                color="blue"
+                color={entry.online ? 'green' : 'default'}
                 style={{
                   display: 'block',
                   width: 'fit-content',
@@ -871,6 +871,9 @@ export default function ClientInfoModal({
                   fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
                 }}
               >
+                <span style={{ marginInlineEnd: 6, fontWeight: 600 }}>
+                  {entry.online ? t('pages.clients.online') : t('pages.clients.offline')}
+                </span>
                 {entry.ip}
                 {entry.time ? ` (${entry.time})` : ''}
                 {entry.node ? (

@@ -9,6 +9,8 @@ export type ClientIpInfo = {
   province?: string;
   city?: string;
   isp?: string;
+  // online is true when the core reports a live connection from this IP.
+  online?: boolean;
 };
 
 // formatRegion renders a client IP's resolved region, e.g. "江苏省 南京市 电信".
@@ -42,6 +44,7 @@ export function normalizeClientIps(obj: unknown): ClientIpInfo[] {
         province: typeof o.province === 'string' ? o.province : '',
         city: typeof o.city === 'string' ? o.city : '',
         isp: typeof o.isp === 'string' ? o.isp : '',
+        online: o.online === true,
       });
     }
   }
