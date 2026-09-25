@@ -1,22 +1,14 @@
-# Security Policy
+# 安全策略
 
-## Reporting a vulnerability
+## 报告安全问题
+如发现本定制分支的安全问题，请**不要在公开 Issue 中贴上细节**，请通过私下渠道联系维护者，或在 Issue 中只描述影响范围、待确认后再补充细节。
 
-Do not open a public issue for anything you believe is exploitable — an
-authentication bypass, remote code execution, injection, secret or
-credential exposure, privilege escalation. A public report gives attackers
-a head start against every 3x-ui deployment.
+## 支持范围
+- 仅覆盖**本定制分支（雷电面板 / ui3344）**。
+- 上游 3x-ui 自身的问题请反馈给 [MHSanaei/3x-ui](https://github.com/MHSanaei/3x-ui)。
 
-Instead, use GitHub's private vulnerability reporting: open this
-repository's **Security** tab and click **Report a vulnerability**. Include
-the affected 3x-ui version, reproduction steps, and the impact you see.
-You will receive replies in the advisory thread.
-
-There is no bug-bounty program. Fixes ship in the next release, and the
-advisory is published after a fixed version is available.
-
-## Supported versions
-
-Only the latest release receives security fixes. Update with the install
-script or your package channel and confirm the problem still exists before
-reporting.
+## 部署安全建议
+- **务必改强面板默认密码**（默认 `3344/3344`）。
+- **更换默认安全入口**（默认 `/ui3344/`）。
+- **启用 SSL**；面板对公网开放前请做好访问控制（如仅 SSH 隧道 / 限制来源 IP）。
+- 妥善保管 2FA 密钥与各类令牌，勿提交进仓库。
