@@ -5,7 +5,7 @@ go 1.27.1
 require (
 	github.com/amnezia-vpn/amneziawg-go/v3 v3.1.20260828
 	github.com/gin-contrib/gzip v1.2.7
-	github.com/gin-contrib/sessions v1.1.1
+	github.com/gin-contrib/sessions v1.1.2
 	github.com/gin-gonic/gin v1.12.0
 	github.com/go-ldap/ldap/v3 v3.4.14
 	github.com/go-playground/validator/v10 v10.30.4
@@ -15,6 +15,7 @@ require (
 	github.com/gorilla/websocket v1.5.3
 	github.com/joho/godotenv v1.5.1
 	github.com/klauspost/compress v1.20.0
+	github.com/lionsoul2014/ip2region/binding/golang v0.0.0-20260901011515-c1a1fc7d5941
 	github.com/mattn/go-sqlite3 v1.14.52
 	github.com/mymmrac/telego v1.12.1
 	github.com/nicksnyder/go-i18n/v2 v2.6.1
@@ -77,7 +78,6 @@ require (
 	github.com/leodido/go-urn v1.5.0 // indirect
 	github.com/libp2p/go-nat v1.0.1-0.20250821073202-01afc089f138 // indirect
 	github.com/libp2p/go-netroute v0.4.0 // indirect
-	github.com/lionsoul2014/ip2region/binding/golang v0.0.0-20260901011515-c1a1fc7d5941 // indirect
 	github.com/lufia/plan9stats v0.0.0-20260802145828-341c2f0c90b5 // indirect
 	github.com/mattn/go-isatty v0.0.24 // indirect
 	github.com/miekg/dns v1.1.73 // indirect
