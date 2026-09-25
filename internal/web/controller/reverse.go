@@ -215,7 +215,7 @@ func buildBridgeConfig(cfg ReverseConfig) (string, error) {
 	if strings.TrimSpace(ib.StreamSettings) != "" {
 		_ = json.Unmarshal([]byte(ib.StreamSettings), &stream)
 	}
-	clientStream := bridgeStream(stream)
+	clientStream := bridgeStream(stream, cfg.ServerAddr)
 	user := map[string]any{
 		"address":    cfg.ServerAddr,
 		"port":       ib.Port,
@@ -253,7 +253,7 @@ func buildBridgeConfig(cfg ReverseConfig) (string, error) {
 
 // bridgeStream converts a server inbound stream into the matching client-side
 // streamSettings (only the parts a client needs).
-func bridgeStream(stream map[string]any) map[string]any {
+func bridgeStream(stream map[string]any, addr string) map[string]any {
 	out := map[string]any{}
 	if v, ok := stream["network"].(string); ok && v != "" {
 		out["network"] = v
@@ -271,6 +271,12 @@ func bridgeStream(stream map[string]any) map[string]any {
 			if v, ok := ts["serverName"]; ok {
 				cs["serverName"] = v
 			}
+		}
+		if _, has := cs["serverName"]; !has && addr != "" {
+			// Behind Cloudflare / a domain, the SNI must be the public domain.
+			cs["serverName"] = addr
+		}
+		if ts != nil {
 			if v, ok := ts["alpn"]; ok {
 				cs["alpn"] = v
 			}

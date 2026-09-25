@@ -155,6 +155,7 @@ export default function ReversePanel() {
           </Form.Item>
         </Space>
         <div style={{ color: '#888', marginBottom: 12 }}>{t('pages.relay.revHint')}</div>
+        <div style={{ color: '#888', marginBottom: 12 }}>{t('pages.relay.revServerHint')}</div>
         <Form.Item label={t('pages.relay.revScope')}>
           <Radio.Group value={scope} onChange={(e) => setScope(e.target.value)}>
             <Radio value="all">{t('pages.relay.revScopeAll')}</Radio>
