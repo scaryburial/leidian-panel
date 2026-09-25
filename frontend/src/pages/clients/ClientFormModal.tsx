@@ -647,6 +647,18 @@ export default function ClientFormModal({
 
   async function onSubmit() {
     const values = methods.getValues();
+    // A blank or non-ASCII "email" is treated as a nickname: keep it as the
+    // comment and swap in a generated ASCII identifier, so Chinese/free-form
+    // names never break node links, subscriptions or stats. Only on create —
+    // renaming an existing client would change its identity.
+    if (!isEdit) {
+      const raw = (values.email || '').trim();
+      if (!raw || !/^[\x00-\x7F]*$/.test(raw)) {
+        const prev = (values.comment || '').trim();
+        values.comment = raw ? (prev ? `${raw} ${prev}` : raw) : prev;
+        values.email = 'u' + RandomUtil.randomLowerAndNum(12);
+      }
+    }
     const schema = isEdit ? ClientFormSchema : ClientCreateFormSchema;
     const validated = schema.safeParse({
       email: values.email,
@@ -852,7 +864,7 @@ export default function ClientFormModal({
                     <>
                       <Row gutter={16}>
                         <Col xs={24} md={12}>
-                          <Form.Item label={t('pages.clients.email')} required>
+                          <Form.Item label={t('pages.clients.email')} required help={t('pages.clients.emailHint')}>
                             <Space.Compact style={{ display: 'flex' }}>
                               <Input
                                 value={email}

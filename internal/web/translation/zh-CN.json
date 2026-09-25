@@ -940,7 +940,8 @@
       "subClashLinkColumn": "订阅 Clash 地址",
       "intranet": "内网",
       "unknown": "未知",
-      "shareSubscribe": "分享 / 订阅"
+      "shareSubscribe": "分享 / 订阅",
+      "emailHint": "可填中文/任意昵称；系统会自动生成内部标识，昵称存入备注。"
     },
     "groups": {
       "name": "名称",

@@ -940,7 +940,8 @@
       "subClashLinkColumn": "Subscription Clash URL",
       "intranet": "LAN",
       "unknown": "Unknown",
-      "shareSubscribe": "Share / Subscribe"
+      "shareSubscribe": "Share / Subscribe",
+      "emailHint": "Nickname is fine (Chinese OK) — an identifier is generated automatically; the name is kept as the note."
     },
     "groups": {
       "name": "Name",

@@ -3,6 +3,7 @@ package service
 import (
 	"encoding/json"
 	"sort"
+	"sync"
 	"time"
 
 	"github.com/mhsanaei/3x-ui/v3/internal/database"
@@ -346,48 +347,57 @@ func pruneStaleNodeClientIps(cutoff int64) error {
 	return nil
 }
 
+// liveOnlineIpMap is a short-lived cache of the core's online IP map. The
+// online-stats API can momentarily report nothing (e.g. between short-lived
+// connections), so the UI reads a small snapshot instead of hammering the API
+// per request.
+var (
+	onlineIpCacheMu  sync.Mutex
+	onlineIpCacheAt  time.Time
+	onlineIpCacheVal map[string][]string
+)
+
+const onlineIpCacheTTL = 3 * time.Second
+
+func (s *InboundService) cachedOnlineIpMap() map[string][]string {
+	onlineIpCacheMu.Lock()
+	defer onlineIpCacheMu.Unlock()
+	if onlineIpCacheVal != nil && time.Since(onlineIpCacheAt) < onlineIpCacheTTL {
+		return onlineIpCacheVal
+	}
+	out := map[string][]string{}
+	users, ok, err := (&XrayService{}).GetOnlineUsers()
+	if err == nil && ok {
+		for _, u := range users {
+			if u.Email == "" {
+				continue
+			}
+			ips := make([]string, 0, len(u.IPs))
+			for _, e := range u.IPs {
+				if e.IP != "" {
+					ips = append(ips, e.IP)
+				}
+			}
+			out[u.Email] = ips
+		}
+	}
+	onlineIpCacheVal = out
+	onlineIpCacheAt = time.Now()
+	return out
+}
+
 // onlineIpSet returns the set of source IPs the core currently reports as
-// online for the given client email. Empty when the online-stats API is
-// unavailable (xray down / old core).
+// online for the given client email.
 func (s *InboundService) onlineIpSet(email string) map[string]bool {
 	out := map[string]bool{}
-	users, ok, err := (&XrayService{}).GetOnlineUsers()
-	if err != nil || !ok {
-		return out
-	}
-	for _, u := range users {
-		if u.Email != email {
-			continue
-		}
-		for _, e := range u.IPs {
-			if e.IP != "" {
-				out[e.IP] = true
-			}
-		}
+	for _, ip := range s.cachedOnlineIpMap()[email] {
+		out[ip] = true
 	}
 	return out
 }
 
 // OnlineIpMap returns, for every client with a live connection, the source IPs
-// the core currently sees (email -> ips). The UI uses it to show the real-time
-// online device count per client.
+// the core currently sees (email -> ips).
 func (s *InboundService) OnlineIpMap() map[string][]string {
-	out := map[string][]string{}
-	users, ok, err := (&XrayService{}).GetOnlineUsers()
-	if err != nil || !ok {
-		return out
-	}
-	for _, u := range users {
-		if u.Email == "" {
-			continue
-		}
-		ips := make([]string, 0, len(u.IPs))
-		for _, e := range u.IPs {
-			if e.IP != "" {
-				ips = append(ips, e.IP)
-			}
-		}
-		out[u.Email] = ips
-	}
-	return out
+	return s.cachedOnlineIpMap()
 }
