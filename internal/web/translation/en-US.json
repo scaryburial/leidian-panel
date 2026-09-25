@@ -2272,7 +2272,24 @@
       "addRule": "Add upstream",
       "removeRule": "Remove",
       "remark": "Note",
-      "remarkPlaceholder": "e.g. static-1 → brother, bought 2026-09"
+      "remarkPlaceholder": "e.g. static-1 → brother, bought 2026-09",
+      "tabRelay": "Egress relay",
+      "tabReverse": "Reverse proxy",
+      "revIntroTitle": "Reverse proxy (home network)",
+      "revIntro": "A machine at home (no public IP) dials the panel. Clients you pick then go through it — using your home network as the egress.",
+      "revEnable": "Enable reverse proxy",
+      "revInbound": "Tunnel inbound",
+      "revClient": "Bridge client",
+      "revTag": "Reverse tag",
+      "revServer": "Panel address",
+      "revHint": "Pick a VLESS inbound and one of its clients (the bridge uses it to dial the panel). Keep the default address if unsure.",
+      "revScope": "Apply to",
+      "revScopeAll": "All clients",
+      "revScopeEmails": "Selected clients",
+      "revEmails": "Clients (email)",
+      "revBridge": "Home config",
+      "revBridgeHint": "Run this config with Xray on the home machine. Keep it running — the tunnel stays up while it is.",
+      "revBridgeFail": "Generate failed — save the config first."
     }
   },
   "tgbot": {

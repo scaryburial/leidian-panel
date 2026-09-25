@@ -55,6 +55,7 @@ var defaultValueMap = map[string]string{
 	"panelGuid":          uuid.NewString(),
 	"apiToken":           "",
 	"relayConfig":        "",
+	"reverseConfig":      "",
 	// Node mTLS material (opt-in). All default empty: the CA + master client
 	// cert are minted lazily on first use, and the node-side trust CA is pasted
 	// in by the operator. Kept out of entity.AllSetting so private keys never
@@ -473,6 +474,16 @@ func (s *SettingService) GetRelayConfig() (string, error) {
 // SetRelayConfig persists the 出口中转 configuration (raw JSON).
 func (s *SettingService) SetRelayConfig(value string) error {
 	return s.setString("relayConfig", value)
+}
+
+// GetReverseConfig returns the persisted reverse-proxy configuration (raw JSON).
+func (s *SettingService) GetReverseConfig() (string, error) {
+	return s.getString("reverseConfig")
+}
+
+// SetReverseConfig persists the reverse-proxy configuration (raw JSON).
+func (s *SettingService) SetReverseConfig(value string) error {
+	return s.setString("reverseConfig", value)
 }
 
 func (s *SettingService) GetXrayOutboundTestUrl() (string, error) {

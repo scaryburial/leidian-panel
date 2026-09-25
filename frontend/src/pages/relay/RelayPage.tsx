@@ -8,6 +8,7 @@ import {
   Input,
   InputNumber,
   Radio,
+  Segmented,
   Select,
   Space,
   Switch,
@@ -16,6 +17,7 @@ import {
 import { DeleteOutlined, PlusOutlined } from '@ant-design/icons';
 
 import { HttpUtil } from '@/utils';
+import ReversePanel from './ReversePanel';
 
 type RelayScope = 'all' | 'emails' | 'inbounds';
 
@@ -63,6 +65,7 @@ export default function RelayPage() {
   const [testingIdx, setTestingIdx] = useState<number | null>(null);
   const [inbounds, setInbounds] = useState<Inbound[]>([]);
   const [emails, setEmails] = useState<string[]>([]);
+  const [tab, setTab] = useState<'relay' | 'reverse'>('relay');
   const watched = Form.useWatch('rules', form);
   const rules = (watched ?? []) as RelayRule[];
 
@@ -137,7 +140,21 @@ export default function RelayPage() {
   }
 
   return (
-    <Card
+    <div>
+      <Segmented
+        block
+        value={tab}
+        onChange={(v) => setTab(v as 'relay' | 'reverse')}
+        options={[
+          { label: t('pages.relay.tabRelay'), value: 'relay' },
+          { label: t('pages.relay.tabReverse'), value: 'reverse' },
+        ]}
+        style={{ marginBottom: 16 }}
+      />
+      {tab === 'reverse' ? (
+        <ReversePanel />
+      ) : (
+      <Card
       title={t('menu.relay')}
       loading={loading}
       extra={
@@ -252,6 +269,8 @@ export default function RelayPage() {
           )}
         </Form.List>
       </Form>
-    </Card>
+      </Card>
+      )}
+    </div>
   );
 }

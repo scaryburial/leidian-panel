@@ -209,6 +209,10 @@ func (a *APIController) initRouter(g *gin.RouterGroup) {
 	relay := api.Group("/relay")
 	NewRelayController(relay)
 
+	// 反向代理 API — Xray VLESS simple reverse (portal/bridge)
+	rev := api.Group("/reverse")
+	NewReverseController(rev)
+
 	// Subscription balancers — client-side balancers for the JSON sub output
 	NewSubBalancerController(api)
 

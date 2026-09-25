@@ -249,6 +249,9 @@ func relayRule(tag string, r RelayRule) map[string]any {
 		rule["user"] = toAnyStrings(r.Emails)
 	case "inbounds":
 		rule["inboundTag"] = toAnyStrings(r.Inbounds)
+	default:
+		// A rule needs at least one matcher; network is the catch-all the core accepts.
+		rule["network"] = "tcp,udp"
 	}
 	return rule
 }

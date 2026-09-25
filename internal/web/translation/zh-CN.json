@@ -2272,7 +2272,24 @@
       "addRule": "添加上游",
       "removeRule": "删除",
       "remark": "备注",
-      "remarkPlaceholder": "例如：静态IP1 → 给哥哥，2026-09 买的"
+      "remarkPlaceholder": "例如：静态IP1 → 给哥哥，2026-09 买的",
+      "tabRelay": "出口中转",
+      "tabReverse": "反向代理",
+      "revIntroTitle": "反向代理（用家里网络）",
+      "revIntro": "家里那台机器（无公网 IP）主动连到本面板；你选的客户端流量就会经它出去，也就是用家里的网络上网。",
+      "revEnable": "启用反向代理",
+      "revInbound": "隧道入站",
+      "revClient": "桥接客户端",
+      "revTag": "反向标签",
+      "revServer": "面板地址",
+      "revHint": "选一个 VLESS 入站和它的一个客户端（家里用它连面板）。不确定就保持默认地址。",
+      "revScope": "生效范围",
+      "revScopeAll": "全部客户端",
+      "revScopeEmails": "指定客户端",
+      "revEmails": "客户端（邮箱）",
+      "revBridge": "家里端配置",
+      "revBridgeHint": "把这段配置放到家里机器上用 Xray 运行，保持运行隧道就一直在。",
+      "revBridgeFail": "生成失败——请先保存配置。"
     }
   },
   "tgbot": {
