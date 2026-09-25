@@ -74,6 +74,41 @@ bash <(curl -fsSL https://raw.githubusercontent.com/scaryburial/leidian-panel/ma
 
 ---
 
+## 🌐 面板 / 订阅走域名与 Cloudflare（可选）
+
+面板默认监听 `33441`、订阅服务监听 `2096`。想用**域名 + Cloudflare 代理**时：
+
+1. 在面板「设置 → 面板设置」把 **webDomain** 填为你的面板域名；「订阅设置」把 **subDomain** 填为你的域名（订阅链接即用域名）。
+2. 用 **Nginx / Caddy** 把 `443` 反代到面板端口 `127.0.0.1:33441`，再在 Cloudflare 上把该域名**开启代理（橙云）**。
+
+**Caddy（最简）**
+```
+panel.example.com {
+    reverse_proxy 127.0.0.1:33441
+}
+```
+
+**Nginx**
+```
+server {
+    listen 443 ssl http2;
+    server_name panel.example.com;
+    ssl_certificate     /path/fullchain.pem;   # 或使用 CF 源站证书
+    ssl_certificate_key /path/privkey.pem;
+    location / {
+        proxy_pass http://127.0.0.1:33441;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+    }
+}
+```
+
+3. **本面板的「反向代理」（隧道）**也支持域名 + CF：在「中转 → 反向代理」里填**域名**，隧道入站用 **WS+TLS**（端口建议 443/8443/2053/2087/2096），生成的家用配置会**自动把 SNI/Host 设为该域名**，即可经 Cloudflare 回源。
+4. **安全提醒**：面板一旦对公网开放，务必**改强密码**、**更换安全入口**、并**启用 SSL**。
+
 ## 📚 文档
 
 - `雷电面板-使用说明.md`
