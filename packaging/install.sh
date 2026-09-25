@@ -51,8 +51,12 @@ fi
 # 创建预设协议（9 个入站）；可用 UI3344_SKIP_PRESETS=1 跳过
 if [ "${UI3344_SKIP_PRESETS:-0}" != "1" ] && command -v python3 >/dev/null 2>&1 && [ -f "$HERE/create-inbounds.py" ]; then
   echo "> 创建预设协议(9 个入站)…"
-  sleep 2
-  UI3344_URL="http://127.0.0.1:${PORT:-33441}${WBP:-/ui3344/}" python3 "$HERE/create-inbounds.py" || echo "! 预设创建失败，可稍后手动运行 create-inbounds.py"
+  # 等待面板就绪（最多 30 秒），避免安装时面板还没起来导致预设创建失败
+  for i in $(seq 1 30); do
+    curl -fsS "http://127.0.0.1:${PORT:-33441}${WBP:-/ui3344/}csrf-token" >/dev/null 2>&1 && break
+    sleep 1
+  done
+  UI3344_URL="http://127.0.0.1:${PORT:-33441}${WBP:-/ui3344/}" python3 "$HERE/create-inbounds.py" || { sleep 3; UI3344_URL="http://127.0.0.1:${PORT:-33441}${WBP:-/ui3344/}" python3 "$HERE/create-inbounds.py"; } || echo "! 预设创建失败，可稍后手动运行 create-inbounds.py"
 fi
 
 # 配置订阅服务（开启 Clash/JSON 订阅 + 内置离线分流规则）；可用 UI3344_SKIP_PRESETS=1 跳过
