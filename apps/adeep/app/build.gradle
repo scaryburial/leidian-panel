@@ -1,0 +1,54 @@
+plugins {
+    id 'com.android.application'
+    id 'org.jetbrains.kotlin.android'
+}
+
+android {
+    namespace 'com.aicode.balanceoverlay'
+    compileSdk 36
+
+    kotlin {
+        jvmToolchain {
+            languageVersion.set(JavaLanguageVersion.of(17))
+        }
+    }
+
+    signingConfigs {
+        if (project.hasProperty("RELEASE_STORE_FILE")) {
+            release {
+                storeFile file(RELEASE_STORE_FILE)
+                storePassword RELEASE_STORE_PASSWORD
+                keyAlias RELEASE_KEY_ALIAS
+                keyPassword RELEASE_KEY_PASSWORD
+                enableV1Signing = true
+                enableV2Signing = true
+            }
+        }
+    }
+
+    defaultConfig {
+        applicationId "com.aicode.balanceoverlay"
+        minSdk 26
+        targetSdk 34
+        versionCode 7
+        versionName "1.6"
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            if (project.hasProperty("RELEASE_STORE_FILE")) {
+                signingConfig signingConfigs.release
+            }
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    lint {
+        checkReleaseBuilds = false
+    }
+}
