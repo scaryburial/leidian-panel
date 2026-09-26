@@ -8,7 +8,7 @@ case "$(uname -m)" in x86_64|amd64) ARCH=amd64;; aarch64|arm64) ARCH=arm64;; *) 
 echo "> 构建前端"
 ( cd frontend && npm run build >/dev/null )
 echo "> 构建后端"
-TAG="${UI3344_TAG:-v1.1}"
+TAG="${UI3344_TAG:-v1.2}"
 LDFLAGS="-X github.com/mhsanaei/3x-ui/v3/internal/config.uiVersion=${TAG} -X github.com/mhsanaei/3x-ui/v3/internal/config.version=3.7.0"
 go build -ldflags "$LDFLAGS" -o dist_tmp_ui3344 .
 echo "> 雷电版本 ${TAG}"

@@ -17,6 +17,8 @@ import {
 import { DeleteOutlined, PlusOutlined } from '@ant-design/icons';
 
 import { HttpUtil } from '@/utils';
+
+const JSON_HEADERS = { headers: { 'Content-Type': 'application/json' } } as const;
 import ReversePanel from './ReversePanel';
 
 type RelayScope = 'all' | 'emails' | 'inbounds';
@@ -115,7 +117,7 @@ export default function RelayPage() {
     const values = await form.validateFields();
     setSaving(true);
     const rules = (values.rules ?? []).map((r) => ({ ...r, enable: !!r.enable }));
-    const r = await HttpUtil.post('/panel/api/relay/config', { rules });
+    const r = await HttpUtil.post('/panel/api/relay/config', { rules }, JSON_HEADERS);
     setSaving(false);
     if (r.success) message.success(t('pages.relay.saved'));
   }
@@ -130,7 +132,7 @@ export default function RelayPage() {
     const r = await HttpUtil.post<{ egressIp: string }>(
       '/panel/api/relay/test',
       { type: row.type, host: row.host, port: row.port, user: row.user, pass: row.pass },
-      { silent: true },
+      { ...JSON_HEADERS, silent: true },
     );
     setTestingIdx(null);
     if (r.success && r.obj?.egressIp) {

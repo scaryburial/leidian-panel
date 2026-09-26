@@ -4,6 +4,8 @@ import { Alert, Button, Card, Descriptions, Form, Input, message, Space, Tag } f
 
 import { HttpUtil } from '@/utils';
 
+const JSON_HEADERS = { headers: { 'Content-Type': 'application/json' } } as const;
+
 interface DomainStatus {
   enabled: boolean;
   fqdn: string;
@@ -48,17 +50,22 @@ export default function DomainPage() {
 
   async function preview() {
     const sub = form.getFieldValue('subdomain') || '';
-    const r = await HttpUtil.post<DomainStatus>('/panel/api/domain/preview', { subdomain: sub });
+    const r = await HttpUtil.post<DomainStatus>(
+      '/panel/api/domain/preview',
+      { subdomain: sub },
+      JSON_HEADERS,
+    );
     if (r?.success && r.obj?.steps) setSteps(r.obj.steps);
   }
 
   async function enable() {
     const v = await form.validateFields();
     setBusy(true);
-    const r = await HttpUtil.post<DomainStatus>('/panel/api/domain/enable', {
-      subdomain: v.subdomain || '',
-      totp: v.totp || '',
-    });
+    const r = await HttpUtil.post<DomainStatus>(
+      '/panel/api/domain/enable',
+      { subdomain: v.subdomain || '', totp: v.totp || '' },
+      JSON_HEADERS,
+    );
     setBusy(false);
     if (r?.success) {
       message.success(t('pages.domain.enabled'));
@@ -71,7 +78,11 @@ export default function DomainPage() {
   async function disable() {
     const v = await form.validateFields(['totp']);
     setBusy(true);
-    const r = await HttpUtil.post('/panel/api/domain/disable', { totp: v.totp || '' });
+    const r = await HttpUtil.post(
+      '/panel/api/domain/disable',
+      { totp: v.totp || '' },
+      JSON_HEADERS,
+    );
     setBusy(false);
     if (r?.success) {
       message.success(t('pages.domain.disabled'));
@@ -83,7 +94,11 @@ export default function DomainPage() {
 
   async function saveToken() {
     const v = await tokenForm.validateFields();
-    const r = await HttpUtil.post('/panel/api/domain/token', { token: v.token, totp: v.totp });
+    const r = await HttpUtil.post(
+      '/panel/api/domain/token',
+      { token: v.token, totp: v.totp },
+      JSON_HEADERS,
+    );
     if (r?.success) {
       message.success(t('pages.domain.saved'));
       tokenForm.resetFields();

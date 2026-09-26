@@ -16,6 +16,8 @@ import {
 
 import { HttpUtil } from '@/utils';
 
+const JSON_HEADERS = { headers: { 'Content-Type': 'application/json' } } as const;
+
 interface ReverseConfig {
   enable: boolean;
   inboundId: number;
@@ -100,7 +102,7 @@ export default function ReversePanel() {
     const values = await form.validateFields();
     values.scope = scope;
     setSaving(true);
-    const r = await HttpUtil.post('/panel/api/reverse/config', values);
+    const r = await HttpUtil.post('/panel/api/reverse/config', values, JSON_HEADERS);
     setSaving(false);
     if (r.success) message.success(t('pages.relay.saved'));
   }
