@@ -57,6 +57,11 @@ var defaultValueMap = map[string]string{
 	"relayConfig":        "",
 	"panelUpdateCheckEnable": "true",
 	"panelUpdateRepo":        "scaryburial/leidian-panel",
+	"cfApiToken":             "",
+	"cfRootDomain":           "578272.xyz",
+	"domainOtpSecret":        "",
+	"domainConfig":           "",
+	"domainEnabled":          "false",
 	"reverseConfig":      "",
 	// Node mTLS material (opt-in). All default empty: the CA + master client
 	// cert are minted lazily on first use, and the node-side trust CA is pasted
@@ -503,6 +508,65 @@ func (s *SettingService) GetPanelUpdateRepo() string {
 // SetPanelUpdateRepo sets the "owner/repo" of the panel update check.
 func (s *SettingService) SetPanelUpdateRepo(value string) error {
 	return s.setString("panelUpdateRepo", strings.TrimSpace(value))
+}
+
+// GetCFApiToken returns the Cloudflare API token used by the domain feature.
+func (s *SettingService) GetCFApiToken() string {
+	value, _ := s.getString("cfApiToken")
+	return strings.TrimSpace(value)
+}
+
+// SetCFApiToken stores the Cloudflare API token.
+func (s *SettingService) SetCFApiToken(value string) error {
+	return s.setString("cfApiToken", strings.TrimSpace(value))
+}
+
+// GetCFRootDomain returns the zone the domain feature manages (e.g. 578272.xyz).
+func (s *SettingService) GetCFRootDomain() string {
+	value, _ := s.getString("cfRootDomain")
+	return strings.TrimSpace(value)
+}
+
+// SetCFRootDomain sets the zone the domain feature manages.
+func (s *SettingService) SetCFRootDomain(value string) error {
+	return s.setString("cfRootDomain", strings.TrimSpace(value))
+}
+
+// GetDomainOtpSecret returns the TOTP secret that gates the domain feature.
+func (s *SettingService) GetDomainOtpSecret() string {
+	value, _ := s.getString("domainOtpSecret")
+	return strings.TrimSpace(value)
+}
+
+// SetDomainOtpSecret stores the TOTP secret that gates the domain feature.
+func (s *SettingService) SetDomainOtpSecret(value string) error {
+	return s.setString("domainOtpSecret", strings.TrimSpace(value))
+}
+
+// GetDomainConfig returns the persisted domain-feature state (raw JSON).
+func (s *SettingService) GetDomainConfig() (string, error) {
+	return s.getString("domainConfig")
+}
+
+// SetDomainConfig persists the domain-feature state (raw JSON).
+func (s *SettingService) SetDomainConfig(value string) error {
+	return s.setString("domainConfig", value)
+}
+
+// GetDomainEnabled reports whether the domain feature is currently on.
+func (s *SettingService) GetDomainEnabled() (bool, error) {
+	return s.getBool("domainEnabled")
+}
+
+// SetDomainEnabled toggles the domain feature state.
+func (s *SettingService) SetDomainEnabled(value bool) error {
+	return s.setBool("domainEnabled", value)
+}
+
+// SetDomainFqdn points the subscription domain at the chosen subdomain (empty
+// string clears it, restoring IP-based links).
+func (s *SettingService) SetDomainFqdn(fqdn string) error {
+	return s.setString("subDomain", strings.TrimSpace(fqdn))
 }
 
 // GetReverseConfig returns the persisted reverse-proxy configuration (raw JSON).

@@ -3420,6 +3420,19 @@ show_usage() {
 └────────────────────────────────────────────────────────────────┘"
 }
 
+domain_menu() {
+    local script="${xui_folder}/domain-setup.py"
+    if [[ ! -f "$script" ]]; then
+        LOGE "未找到 $script，请重新安装面板（新版包含域名功能）"
+        return 1
+    fi
+    if ! command -v python3 > /dev/null 2>&1; then
+        LOGE "域名功能需要 python3"
+        return 1
+    fi
+    python3 "$script"
+}
+
 show_menu() {
     echo -e "
 ╔────────────────────────────────────────────────╗
@@ -3459,10 +3472,11 @@ show_menu() {
 │  ${green}26.${plain} 开启 BBR
 │  ${green}27.${plain} 更新 Geo 文件
 │  ${green}28.${plain} Ookla 测速
+│  ${green}29.${plain} 域名功能（Cloudflare）
 ╚────────────────────────────────────────────────╝
 "
     show_status
-    echo && read -rp "请输入你的选择 [0-28]: " num
+    echo && read -rp "请输入你的选择 [0-29]: " num
 
     case "${num}" in
         0)
@@ -3552,8 +3566,11 @@ show_menu() {
         28)
             run_speedtest
             ;;
+        29)
+            check_install && domain_menu
+            ;;
         *)
-            LOGE "请输入正确的数字 [0-28]"
+            LOGE "请输入正确的数字 [0-29]"
             ;;
     esac
 }

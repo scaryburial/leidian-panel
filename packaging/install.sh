@@ -14,6 +14,8 @@ install -d -m755 "$APP" "$APP/bin" /etc/ui3344 /var/log/ui3344
 cp -f "$HERE/ui3344" "$APP/ui3344"; chmod +x "$APP/ui3344"
 if [ -d "$HERE/bin" ]; then cp -a "$HERE"/bin/. "$APP/bin/"; fi
 chmod +x "$APP"/bin/* 2>/dev/null || true
+# 保留辅助脚本，供安装后离线使用（预设重建 / 订阅配置 / 域名功能）
+for f in create-inbounds.py configure-subscription.py domain-setup.py; do [ -f "$HERE/$f" ] && cp -f "$HERE/$f" "$APP/$f" && chmod +x "$APP/$f"; done
 cp -f "$HERE/ui3344.sh" /usr/bin/ui3344; chmod +x /usr/bin/ui3344
 
 if [ -d /run/systemd/system ]; then

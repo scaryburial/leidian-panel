@@ -66,7 +66,8 @@ type IconName =
   | 'apidocs'
   | 'outbound'
   | 'routing'
-  | 'relay';
+  | 'relay'
+  | 'domain';
 
 const iconByName: Record<IconName, ComponentType> = {
   dashboard: DashboardOutlined,
@@ -82,6 +83,7 @@ const iconByName: Record<IconName, ComponentType> = {
   outbound: ExportOutlined,
   routing: SwapOutlined,
   relay: BranchesOutlined,
+  domain: GlobalOutlined,
 };
 
 function VersionBadge({ version, collapsed }: { version: string; collapsed?: boolean }) {
@@ -189,6 +191,7 @@ export default function AppSidebar() {
       { key: '/outbound', icon: 'outbound', title: t('menu.outbounds') },
       { key: '/routing', icon: 'routing', title: t('menu.routing') },
       { key: '/relay', icon: 'relay', title: t('menu.relay') },
+      { key: '/domain', icon: 'domain', title: t('menuDomain') },
       { key: '/settings', icon: 'setting', title: t('menu.settings') },
       { key: '/xray', icon: 'tool', title: t('menu.xray') },
       { key: '/api-docs', icon: 'apidocs', title: t('menu.apiDocs') },

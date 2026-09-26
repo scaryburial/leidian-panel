@@ -213,6 +213,10 @@ func (a *APIController) initRouter(g *gin.RouterGroup) {
 	rev := api.Group("/reverse")
 	NewReverseController(rev)
 
+	// 域名功能 API — Cloudflare 子域名 + 证书 + WS 切换（TOTP 门禁）
+	dom := api.Group("/domain")
+	NewDomainController(dom)
+
 	// Subscription balancers — client-side balancers for the JSON sub output
 	NewSubBalancerController(api)
 
