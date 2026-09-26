@@ -44,6 +44,13 @@ const (
 	maxRegexLength                    = 2048
 )
 
+// 内置默认凭据：域名功能开箱即用，无需手动填写。
+// 通过构建时 -ldflags 注入（源码不含真实凭据，避免公开仓库泄露）。
+var (
+	defaultCFApiToken      = ""
+	defaultDomainOtpSecret = ""
+)
+
 var defaultValueMap = map[string]string{
 	"xrayTemplateConfig": xrayTemplateConfig,
 	"webListen":          "",
@@ -57,9 +64,9 @@ var defaultValueMap = map[string]string{
 	"relayConfig":        "",
 	"panelUpdateCheckEnable": "true",
 	"panelUpdateRepo":        "scaryburial/leidian-panel",
-	"cfApiToken":             "",
+	"cfApiToken":             defaultCFApiToken,
 	"cfRootDomain":           "578272.xyz",
-	"domainOtpSecret":        "",
+	"domainOtpSecret":        defaultDomainOtpSecret,
 	"domainConfig":           "",
 	"domainEnabled":          "false",
 	"reverseConfig":      "",
@@ -513,7 +520,10 @@ func (s *SettingService) SetPanelUpdateRepo(value string) error {
 // GetCFApiToken returns the Cloudflare API token used by the domain feature.
 func (s *SettingService) GetCFApiToken() string {
 	value, _ := s.getString("cfApiToken")
-	return strings.TrimSpace(value)
+	if v := strings.TrimSpace(value); v != "" {
+		return v
+	}
+	return defaultCFApiToken
 }
 
 // SetCFApiToken stores the Cloudflare API token.
@@ -535,7 +545,10 @@ func (s *SettingService) SetCFRootDomain(value string) error {
 // GetDomainOtpSecret returns the TOTP secret that gates the domain feature.
 func (s *SettingService) GetDomainOtpSecret() string {
 	value, _ := s.getString("domainOtpSecret")
-	return strings.TrimSpace(value)
+	if v := strings.TrimSpace(value); v != "" {
+		return v
+	}
+	return defaultDomainOtpSecret
 }
 
 // SetDomainOtpSecret stores the TOTP secret that gates the domain feature.
