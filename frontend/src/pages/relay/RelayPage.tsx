@@ -93,7 +93,7 @@ export default function RelayPage() {
       }
       setEmails([...set].sort());
       const loaded = cfg?.success && cfg.obj?.rules?.length ? cfg.obj.rules : [NEW_RULE];
-      form.setFieldsValue({ rules: loaded });
+      form.setFieldsValue({ rules: loaded.map((r) => ({ ...r, enable: !!r.enable })) });
       setLoading(false);
     })();
     return () => {
@@ -114,7 +114,8 @@ export default function RelayPage() {
   async function save() {
     const values = await form.validateFields();
     setSaving(true);
-    const r = await HttpUtil.post('/panel/api/relay/config', { rules: values.rules ?? [] });
+    const rules = (values.rules ?? []).map((r) => ({ ...r, enable: !!r.enable }));
+    const r = await HttpUtil.post('/panel/api/relay/config', { rules });
     setSaving(false);
     if (r.success) message.success(t('pages.relay.saved'));
   }

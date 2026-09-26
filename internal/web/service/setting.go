@@ -55,6 +55,8 @@ var defaultValueMap = map[string]string{
 	"panelGuid":          uuid.NewString(),
 	"apiToken":           "",
 	"relayConfig":        "",
+	"panelUpdateCheckEnable": "true",
+	"panelUpdateRepo":        "scaryburial/leidian-panel",
 	"reverseConfig":      "",
 	// Node mTLS material (opt-in). All default empty: the CA + master client
 	// cert are minted lazily on first use, and the node-side trust CA is pasted
@@ -474,6 +476,33 @@ func (s *SettingService) GetRelayConfig() (string, error) {
 // SetRelayConfig persists the 出口中转 configuration (raw JSON).
 func (s *SettingService) SetRelayConfig(value string) error {
 	return s.setString("relayConfig", value)
+}
+
+// GetPanelUpdateCheckEnable reports whether the panel should check this fork's
+// own GitHub releases for a newer version. On by default so the panel can tell
+// the operator a new build exists.
+func (s *SettingService) GetPanelUpdateCheckEnable() (bool, error) {
+	return s.getBool("panelUpdateCheckEnable")
+}
+
+// SetPanelUpdateCheckEnable toggles the panel's own update check.
+func (s *SettingService) SetPanelUpdateCheckEnable(value bool) error {
+	return s.setBool("panelUpdateCheckEnable", value)
+}
+
+// GetPanelUpdateRepo returns the "owner/repo" of this fork queried by the panel
+// update check.
+func (s *SettingService) GetPanelUpdateRepo() string {
+	value, err := s.getString("panelUpdateRepo")
+	if err != nil || strings.TrimSpace(value) == "" {
+		return "scaryburial/leidian-panel"
+	}
+	return strings.TrimSpace(value)
+}
+
+// SetPanelUpdateRepo sets the "owner/repo" of the panel update check.
+func (s *SettingService) SetPanelUpdateRepo(value string) error {
+	return s.setString("panelUpdateRepo", strings.TrimSpace(value))
 }
 
 // GetReverseConfig returns the persisted reverse-proxy configuration (raw JSON).

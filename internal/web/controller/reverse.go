@@ -16,7 +16,7 @@ import (
 // bridge machine behind NAT dials the panel and its network becomes an egress
 // (or a reachable target) for the clients the operator picks.
 type ReverseConfig struct {
-	Enable      bool     `json:"enable"`
+	Enable      flexBool `json:"enable"`
 	InboundId   int      `json:"inboundId"`   // VLESS inbound the bridge connects to
 	ClientEmail string   `json:"clientEmail"` // client on that inbound carrying the reverse tag
 	Tag         string   `json:"tag"`         // reverse/portal tag (both sides must match)
@@ -53,7 +53,7 @@ func (a *ReverseController) getConfig(c *gin.Context) {
 func (a *ReverseController) saveConfig(c *gin.Context) {
 	var cfg ReverseConfig
 	if err := c.ShouldBindJSON(&cfg); err != nil {
-		jsonMsg(c, "参数错误", err)
+		jsonMsg(c, "参数错误："+err.Error(), err)
 		return
 	}
 	cfg.ClientEmail = strings.TrimSpace(cfg.ClientEmail)
@@ -66,7 +66,7 @@ func (a *ReverseController) saveConfig(c *gin.Context) {
 	if cfg.Scope != "emails" {
 		cfg.Scope = "all"
 	}
-	if cfg.Enable {
+	if bool(cfg.Enable) {
 		if cfg.InboundId <= 0 || cfg.ClientEmail == "" {
 			jsonMsg(c, "请选择隧道入站与客户端", nil)
 			return
@@ -76,7 +76,7 @@ func (a *ReverseController) saveConfig(c *gin.Context) {
 			return
 		}
 	}
-	if err := setClientReverseTag(cfg.InboundId, cfg.ClientEmail, cfg.Tag, cfg.Enable); err != nil {
+	if err := setClientReverseTag(cfg.InboundId, cfg.ClientEmail, cfg.Tag, bool(cfg.Enable)); err != nil {
 		jsonMsg(c, "设置反向标签失败", err)
 		return
 	}
@@ -159,7 +159,7 @@ func applyReverseToTemplate(template string, cfg ReverseConfig) (string, error) 
 	}
 	rules, _ := routing["rules"].([]any)
 	rules = removeRulesByOutboundPrefix(rules, cfg.Tag)
-	if cfg.Enable {
+	if bool(cfg.Enable) {
 		rule := map[string]any{"type": "field", "outboundTag": cfg.Tag}
 		if cfg.Scope == "emails" {
 			rule["user"] = toAnyStrings(cfg.Emails)

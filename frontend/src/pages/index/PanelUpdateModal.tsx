@@ -17,6 +17,8 @@ export interface PanelUpdateInfo {
   currentCommit?: string;
   latestCommit?: string;
   updateAvailable: boolean;
+  repo?: string;
+  releaseUrl?: string;
 }
 
 interface BusyEvent {
@@ -185,10 +187,14 @@ export default function PanelUpdateModal({
           <Button
             type="primary"
             disabled={!info.updateAvailable}
-            onClick={updatePanel}
+            onClick={() =>
+              info.releaseUrl
+                ? window.open(info.releaseUrl, '_blank', 'noopener,noreferrer')
+                : updatePanel()
+            }
             icon={<CloudDownloadOutlined />}
           >
-            {t('pages.index.updatePanel')}
+            {info.releaseUrl ? t('pages.index.downloadUpdate') : t('pages.index.updatePanel')}
           </Button>
         </div>
       </Modal>

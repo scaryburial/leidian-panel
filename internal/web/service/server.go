@@ -137,6 +137,7 @@ type Release struct {
 	Body            string `json:"body"`             // The release notes; the dev channel reads its commit from here
 	TargetCommitish string `json:"target_commitish"` // The branch/commit the tag points at
 	Prerelease      bool   `json:"prerelease"`       // Whether this is a pre-release
+	HTMLURL         string `json:"html_url"`         // The release page URL
 }
 
 // ServerService provides business logic for server monitoring and management.

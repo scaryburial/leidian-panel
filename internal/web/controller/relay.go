@@ -3,6 +3,7 @@ package controller
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -24,10 +25,30 @@ const (
 	relayTestURL   = "https://api.ipify.org"
 )
 
+// flexBool accepts the several shapes a "boolean" can arrive in — real JSON
+// booleans, quoted strings such as "true"/"yes"/"on"/"1", or a stray text
+// value — so a single malformed field can't fail the whole save with an opaque
+// `invalid character ... in literal true` 400. Unknown text is reported with
+// its own value so the operator can see which field is wrong.
+type flexBool bool
+
+func (b *flexBool) UnmarshalJSON(data []byte) error {
+	s := strings.ToLower(strings.Trim(strings.TrimSpace(string(data)), "\""))
+	switch s {
+	case "true", "1", "yes", "y", "on", "enable", "enabled":
+		*b = true
+	case "false", "0", "no", "n", "off", "disable", "disabled", "", "null":
+		*b = false
+	default:
+		return fmt.Errorf("无效的布尔值 %q（应为 true / false）", s)
+	}
+	return nil
+}
+
 // RelayRule is one upstream (SOCKS5/HTTP) plus the clients it applies to.
 type RelayRule struct {
 	ID       string   `json:"id"`
-	Enable   bool     `json:"enable"`
+	Enable   flexBool `json:"enable"`
 	Type     string   `json:"type"` // "socks" | "http"
 	Host     string   `json:"host"`
 	Port     int      `json:"port"`
@@ -77,7 +98,7 @@ func (a *RelayController) getConfig(c *gin.Context) {
 func (a *RelayController) saveConfig(c *gin.Context) {
 	var cfg RelayConfig
 	if err := c.ShouldBindJSON(&cfg); err != nil {
-		jsonMsg(c, "参数错误", err)
+		jsonMsg(c, "参数错误："+err.Error(), err)
 		return
 	}
 	normalized, err := normalizeRelayRules(cfg.Rules)
@@ -148,7 +169,7 @@ func normalizeRelayRules(rules []RelayRule) ([]RelayRule, error) {
 		r.Remark = strings.TrimSpace(r.Remark)
 		r.Emails = cleanRelayList(r.Emails)
 		r.Inbounds = cleanRelayList(r.Inbounds)
-		if r.Enable {
+		if bool(r.Enable) {
 			if r.Host == "" || r.Port <= 0 || r.Port > 65535 {
 				return nil, errRelay("请为每条启用中的上游填写正确的地址与端口")
 			}
@@ -202,7 +223,7 @@ func applyRelayToTemplate(template string, cfg RelayConfig) (string, error) {
 
 	enabled := make([]RelayRule, 0, len(cfg.Rules))
 	for _, r := range cfg.Rules {
-		if r.Enable {
+		if bool(r.Enable) {
 			enabled = append(enabled, r)
 		}
 	}

@@ -37,6 +37,8 @@ type PanelUpdateInfo struct {
 	CurrentCommit   string `json:"currentCommit,omitempty"`
 	LatestCommit    string `json:"latestCommit,omitempty"`
 	UpdateAvailable bool   `json:"updateAvailable"`
+	Repo            string `json:"repo,omitempty"`
+	ReleaseURL      string `json:"releaseUrl,omitempty"`
 }
 
 const (
@@ -129,13 +131,32 @@ func (s *PanelService) RestartPanel(delay time.Duration) error {
 // is enabled on a dev build it compares commits against the rolling dev release;
 // otherwise it compares versions against the latest stable tag.
 func (s *PanelService) GetUpdateInfo() (*PanelUpdateInfo, error) {
-	current := config.GetBaseVersion()
-	return &PanelUpdateInfo{
-		Channel:         "local",
-		CurrentVersion:  current,
-		LatestVersion:   current,
-		UpdateAvailable: false,
-	}, nil
+	current := config.GetUIVersion()
+	info := &PanelUpdateInfo{
+		Channel:        "ui3344",
+		CurrentVersion: current,
+		LatestVersion:  current,
+	}
+	settingService := &service.SettingService{}
+	enabled, err := settingService.GetPanelUpdateCheckEnable()
+	if err != nil || !enabled {
+		return info, nil
+	}
+	repo := settingService.GetPanelUpdateRepo()
+	release, err := fetchPanelRelease(repo, "")
+	if err != nil {
+		// A network problem must not surface as an error in the UI.
+		return info, nil
+	}
+	latest := strings.TrimSpace(release.TagName)
+	if latest == "" {
+		return info, nil
+	}
+	info.Repo = repo
+	info.LatestVersion = latest
+	info.ReleaseURL = release.HTMLURL
+	info.UpdateAvailable = isNewerVersion(latest, current)
+	return info, nil
 }
 
 // devChannelActive reports whether self-update should track the rolling dev
@@ -151,7 +172,7 @@ func devChannelActive() bool {
 // getDevUpdateInfo compares the running commit against the commit recorded in the
 // rolling dev release.
 func getDevUpdateInfo() (*PanelUpdateInfo, error) {
-	release, err := fetchPanelRelease(devReleaseTag)
+	release, err := fetchPanelRelease((&service.SettingService{}).GetPanelUpdateRepo(), devReleaseTag)
 	if err != nil {
 		return nil, err
 	}
@@ -410,7 +431,7 @@ func downloadPanelUpdater() (string, error) {
 }
 
 func fetchLatestPanelVersion() (string, error) {
-	release, err := fetchPanelRelease("")
+	release, err := fetchPanelRelease((&service.SettingService{}).GetPanelUpdateRepo(), "")
 	if err != nil {
 		return "", err
 	}
@@ -420,11 +441,40 @@ func fetchLatestPanelVersion() (string, error) {
 	return release.TagName, nil
 }
 
-// fetchPanelRelease fetches a release from GitHub. An empty tag resolves the
-// latest stable release; a non-empty tag (e.g. dev-latest) resolves that tag.
-func fetchPanelRelease(tag string) (*service.Release, error) {
-	// Privacy: upstream release lookup disabled; no GitHub request is made.
-	return nil, fmt.Errorf("panel release lookup is disabled")
+// fetchPanelRelease fetches a release of this fork from GitHub. An empty tag
+// resolves the latest published release; a non-empty tag resolves that tag.
+func fetchPanelRelease(repo, tag string) (*service.Release, error) {
+	repo = strings.TrimSpace(repo)
+	if repo == "" {
+		return nil, fmt.Errorf("panel update repo is not configured")
+	}
+	apiURL := "https://api.github.com/repos/" + repo + "/releases/latest"
+	if tag != "" {
+		apiURL = "https://api.github.com/repos/" + repo + "/releases/tags/" + tag
+	}
+	client := (&service.SettingService{}).NewProxiedHTTPClient(10 * time.Second)
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, apiURL, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Accept", "application/vnd.github+json")
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("panel release lookup: HTTP %d", resp.StatusCode)
+	}
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if err != nil {
+		return nil, err
+	}
+	var release service.Release
+	if err := json.Unmarshal(body, &release); err != nil {
+		return nil, err
+	}
+	return &release, nil
 }
 
 // extractReleaseCommit reads the build commit recorded in the dev release: first

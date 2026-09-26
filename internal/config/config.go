@@ -17,6 +17,11 @@ import (
 //go:embed version
 var version string
 
+// uiVersion is the 雷电面板（ui3344）release tag this binary was built from
+// (e.g. "v1.1"), injected via -ldflags at build time. The panel's update
+// checker compares this fork's own GitHub releases against it.
+var uiVersion string
+
 //go:embed name
 var name string
 
@@ -47,6 +52,16 @@ const (
 // builds), use GetPanelVersion.
 func GetBaseVersion() string {
 	return strings.TrimSpace(version)
+}
+
+// GetUIVersion returns the 雷电面板 (ui3344) release tag this binary was built
+// from (e.g. "v1.1"), falling back to the embedded base version when it was not
+// injected at build time.
+func GetUIVersion() string {
+	if v := strings.TrimSpace(uiVersion); v != "" {
+		return v
+	}
+	return GetBaseVersion()
 }
 
 // GetName returns the name of the 3x-ui application.
