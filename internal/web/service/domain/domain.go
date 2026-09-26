@@ -366,8 +366,11 @@ func (c *cfClient) do(ctx context.Context, method, path string, body any) (json.
 	return env.Result, nil
 }
 
+// verify 仅用于确认令牌可用。注意：域名级(zone-scoped)令牌会被
+// /user/tokens/verify 判为 Invalid API Token，因此改用令牌真正需要的
+// zones 列表接口来校验。
 func (c *cfClient) verify(ctx context.Context) error {
-	_, err := c.do(ctx, http.MethodGet, "/user/tokens/verify", nil)
+	_, err := c.do(ctx, http.MethodGet, "/zones?per_page=1", nil)
 	return err
 }
 
@@ -484,8 +487,10 @@ func (c *cfClient) mintOriginCert(ctx context.Context, fqdn, certDir string) err
 func detectPublicIP(ctx context.Context) (string, error) {
 	endpoints := []string{
 		"https://api.ipify.org",
-		"https://ifconfig.me/ip",
+		"https://ipv4.icanhazip.com",
+		"https://ipinfo.io/ip",
 		"https://1.1.1.1/cdn-cgi/trace",
+		"https://ifconfig.me/ip",
 	}
 	client := &http.Client{Timeout: 8 * time.Second}
 	var lastErr error
@@ -513,8 +518,9 @@ func detectPublicIP(ctx context.Context) (string, error) {
 			}
 		}
 		text = strings.TrimSpace(text)
-		if net.ParseIP(text) != nil {
-			return text, nil
+		// 只接受 IPv4：DNS 写的是 A 记录，若误取 IPv6 会导致创建失败。
+		if ip := net.ParseIP(text); ip != nil && ip.To4() != nil {
+			return ip.To4().String(), nil
 		}
 		lastErr = fmt.Errorf("%s: %q", ep, text)
 	}

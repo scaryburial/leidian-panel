@@ -8,7 +8,7 @@ case "$(uname -m)" in x86_64|amd64) ARCH=amd64;; aarch64|arm64) ARCH=arm64;; *) 
 echo "> 构建前端"
 ( cd frontend && npm run build >/dev/null )
 echo "> 构建后端"
-TAG="${UI3344_TAG:-v1.3}"
+TAG="${UI3344_TAG:-v1.4}"
 LDFLAGS="-X github.com/mhsanaei/3x-ui/v3/internal/config.uiVersion=${TAG} -X github.com/mhsanaei/3x-ui/v3/internal/config.version=3.7.0"
 # 域名功能内置默认额据（构建时注入，源码不含真实值）：
 #   UI3344_CF_TOKEN / UI3344_OTP_SECRET 两个环境变量
