@@ -40,7 +40,7 @@ import { FormField, rhfZodValidate } from '@/components/form/rhf';
 import { Protocols, TRAFFIC_RESETS } from '@/schemas/primitives';
 import { SockoptStreamSettingsSchema } from '@/schemas/protocols/stream/sockopt';
 import { HysteriaStreamSettingsSchema } from '@/schemas/protocols/stream/hysteria';
-import { createHysteriaTlsSettingsWithDefaultCert } from '@/lib/xray/inbound-tls-defaults';
+import { createHysteriaTlsSettingsWithDefaultCert, tlsAlpnForNetwork } from '@/lib/xray/inbound-tls-defaults';
 import { NODE_ELIGIBLE_PROTOCOLS } from '@/lib/xray/node-protocols';
 import { VLESS_AUTH_LABEL_KEYS, vlessEncryptionAuthKind } from '@/lib/xray/vless-encryption';
 import { SniffingSchema } from '@/schemas/primitives/sniffing';
@@ -858,6 +858,12 @@ export default function InboundFormModal({
       if (k !== `${next}Settings`) delete cleaned[k];
     }
     cleaned[`${next}Settings`] = newStreamSlice(next);
+    // Moving to a transport that cannot run on h2 (or off one, which restores
+    // the schema default) re-derives ALPN from the network the user just chose.
+    const tls = cleaned.tlsSettings as Record<string, unknown> | undefined;
+    if (tls && typeof tls === 'object') {
+      cleaned.tlsSettings = { ...tls, alpn: tlsAlpnForNetwork(next, tls.alpn) };
+    }
     if (next === 'kcp') {
       const fm = (cleaned.finalmask as Record<string, unknown> | undefined) ?? {};
       const udp = Array.isArray(fm.udp) ? (fm.udp as unknown[]) : [];

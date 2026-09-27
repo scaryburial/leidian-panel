@@ -39,7 +39,7 @@ describe('factory defaults contract', () => {
   });
 
   it('parses a plausible slice of the Go map', () => {
-    expect(goDefaults.webPort).toBe('2053');
+    expect(goDefaults.webPort).toBe('33441');
     expect(goDefaults.subPort).toBe('2096');
     expect(sharedKeys.length).toBeGreaterThan(20);
   });

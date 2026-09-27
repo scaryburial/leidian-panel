@@ -10,8 +10,8 @@ import (
 
 const visionFlow = "xtls-rprx-vision"
 
-// restoreVisionFlowForEligibleInbound re-adds the XTLS Vision flow to a VLESS
-// inbound's clients that lost it earlier.
+// restoreVisionFlowForEligibleInbound re-gates the clients of a VLESS inbound
+// against the inbound's now-final stream settings, in both directions.
 //
 // clientWithInboundFlow strips Vision from a client whenever the target inbound
 // is not flow-eligible at write time (e.g. an XHTTP inbound before its vlessenc
@@ -20,18 +20,39 @@ const visionFlow = "xtls-rprx-vision"
 // clients — so enabling encryption on an existing XHTTP inbound left every
 // client without flow, and the share links/subscriptions dropped it.
 //
-// This runs on the now-final inbound settings: when the inbound IS flow-eligible
-// it sets flow=Vision on each client that currently has no flow but whose
-// intended flow (its flow_override on a sibling inbound, via EffectiveFlowsByEmails)
-// is Vision. It never invents a flow for a client that has none anywhere, and it
-// never overwrites an explicit non-empty flow. Returns the rewritten settings
-// JSON and whether anything changed.
+//   - Eligible (TCP over TLS/Reality, or XHTTP with VLESS encryption): set
+//     flow=Vision on each client that currently has no flow but whose intended
+//     flow (its flow_override on a sibling inbound, via EffectiveFlowsByEmails)
+//     is Vision. It never invents a flow for a client that has none anywhere,
+//     and it never overwrites an explicit non-empty flow.
+//
+//   - Permanently ineligible (a transport Vision cannot ride: WebSocket,
+//     HTTPUpgrade, gRPC, mKCP, QUIC, plain HTTP): delete the flow the inbound
+//     still carries. Such a flow can only have come from a bulk client edit or a
+//     pre-existing install — create-inbounds.py used to stamp Vision onto every
+//     VLESS client, including the WebSocket one — and it makes the inbound
+//     100% unusable: the panel's own link/subscription builders strip the flow
+//     for these transports (vlessFlowAllowed in internal/sub), so the client
+//     never sends it while the server account still demands it, and Xray
+//     rejects the connection at handshake time with
+//
+//     account <email> is rejected since the client flow is empty
+//
+//     Deleting it here is what lets an already-installed panel heal on its next
+//     UpdateInbound edit, MigrationRestoreVisionFlow run, or client edit.
+//
+// Returns the rewritten settings JSON and whether anything changed.
 func (s *InboundService) restoreVisionFlowForEligibleInbound(tx *gorm.DB, settings, streamSettings string, protocol model.Protocol) (string, bool) {
 	if protocol != model.VLESS {
 		return settings, false
 	}
 	if !inboundCanEnableTlsFlow(string(protocol), streamSettings, settings) {
-		return settings, false
+		if !transportCanNeverUseVisionFlow(streamSettings) {
+			return settings, false
+		}
+		// No query needed: a transport that can never carry Vision has no flow
+		// worth resolving intent for, so every stored flow is dead weight.
+		return stripClientFlows(settings)
 	}
 	var parsed map[string]any
 	if err := json.Unmarshal([]byte(settings), &parsed); err != nil {
@@ -87,6 +108,31 @@ func (s *InboundService) restoreVisionFlowForEligibleInbound(tx *gorm.DB, settin
 		return settings, false
 	}
 	return string(out), true
+}
+
+// sanitizeVisionFlowForTransport applies restoreVisionFlowForEligibleInbound's
+// ineligible-transport half to an inbound that is being created, so a client
+// submitted with a flow the transport cannot express is never persisted with it
+// (and never reaches the generated Xray config). The clients slice is rewritten
+// in place, because the callers hand that same slice to ClientService.SyncInbound
+// and it is what lands in clients/client_inbounds — normalizing only the settings
+// JSON would leave the flow alive in the normalized tables.
+//
+// Unlike the update path this ignores tx: a brand-new inbound has no sibling
+// flow_override rows to consult, so no eligibility query is needed.
+func (s *InboundService) sanitizeVisionFlowForTransport(inbound *model.Inbound, clients []model.Client) {
+	if inbound.DisableFlow || inbound.Protocol != model.VLESS {
+		return
+	}
+	if !transportCanNeverUseVisionFlow(inbound.StreamSettings) {
+		return
+	}
+	if stripped, changed := stripClientFlows(inbound.Settings); changed {
+		inbound.Settings = stripped
+	}
+	for i := range clients {
+		clients[i].Flow = ""
+	}
 }
 
 func stripClientFlows(settings string) (string, bool) {

@@ -54,6 +54,12 @@ type Result struct {
 	Proxied      bool     `json:"proxied"`
 	CFConfigured bool     `json:"cfConfigured"`
 	Steps        []string `json:"steps,omitempty"`
+
+	// 优选域名：已内置的优选域名数量与内容，以及本次操作的提示/警告。
+	PreferredCount    int              `json:"preferredCount"`
+	PreferredDomains  []string         `json:"preferredDomains,omitempty"`
+	PreferredRejected []RejectedDomain `json:"preferredRejected,omitempty"`
+	Warnings          []string         `json:"warnings,omitempty"`
 }
 
 // Manager drives the whole feature. It is stateless; everything it needs lives
@@ -73,6 +79,10 @@ type storedState struct {
 	CertMode string `json:"certMode"`
 	CertPath string `json:"certPath"`
 	Proxied  bool   `json:"proxied"`
+
+	// 优选域名生成的产物（用于状态展示与「只挂加密端口」的可追溯性）。
+	PreferredDomains       []string `json:"preferredDomains,omitempty"`
+	PreferredRejectedCount int      `json:"preferredRejectedCount,omitempty"`
 }
 
 func (m *Manager) rootDomain() string {
@@ -98,14 +108,16 @@ func (m *Manager) saveState(st storedState) error {
 
 func (m *Manager) snapshot(st storedState) Result {
 	return Result{
-		Enabled:      st.Enabled,
-		FQDN:         st.FQDN,
-		RootDomain:   m.rootDomain(),
-		ServerIP:     st.IP,
-		CertMode:     st.CertMode,
-		CertPath:     st.CertPath,
-		Proxied:      st.Proxied,
-		CFConfigured: strings.TrimSpace(m.settingService.GetCFApiToken()) != "",
+		Enabled:          st.Enabled,
+		FQDN:             st.FQDN,
+		RootDomain:       m.rootDomain(),
+		ServerIP:         st.IP,
+		CertMode:         st.CertMode,
+		CertPath:         st.CertPath,
+		Proxied:          st.Proxied,
+		CFConfigured:     strings.TrimSpace(m.settingService.GetCFApiToken()) != "",
+		PreferredCount:   len(st.PreferredDomains),
+		PreferredDomains: st.PreferredDomains,
 	}
 }
 
@@ -125,8 +137,14 @@ func (m *Manager) Preview(subdomain string) Result {
 		"4) 在 Cloudflare 为 578272.xyz 创建/更新 A 记录（橙云代理）",
 		"5) 申请证书：优先 ACME/CF Origin，失败回退自签",
 		"6) 把 " + wsVLESSRemark + " / " + wsVMessRemark + " 切到 WS+TLS 并使用该域名",
-		"7) 订阅域名设为该子域名；成功后记录状态",
-		"失败任一步：回滚本次已做的改动，保持原状",
+		"   · 其中位于 CF 纯 HTTP 端口（如 2052）的入站会跳过：该端口不支持 TLS，",
+		"     强行切换会让节点在订阅里显示 tls 却连不上；跳过则它继续作为明文节点可用",
+		"7) 自动生成优选域名组（备注 " + preferredGroupRemark + "）：",
+		"   · 只挂「WS 传输 + 源站 TLS + CF HTTPS 端口(443/2053/2083/2087/2096/8443)」的入站",
+		"   · 候选域名逐个做 DNS + Cloudflare 官方网段校验，失效或已不指向 CF 的会被剔除",
+		"   · 组内 port/path/security 留默认值，表示逐行继承各自入站，因此客户端链接自动正确",
+		"8) 订阅域名设为该子域名；成功后记录状态",
+		"失败任一步：回滚本次已做的改动，保持原状（优选生成失败除外，它只提示不回滚）",
 	}
 	res.Steps = steps
 	return res
@@ -151,6 +169,14 @@ func (m *Manager) resolveSubdomain(sub string) string {
 // domain feature.
 func (m *Manager) Authorize(code string) bool {
 	return totp.Verify(m.settingService.GetDomainOtpSecret(), code)
+}
+
+// OtpConfigured reports whether a TOTP secret is already stored. It lets the
+// secret be set once without a code (nothing to verify yet) while every later
+// replacement must present the current code — otherwise a stolen session could
+// install its own second factor and the TOTP gate would protect nothing.
+func (m *Manager) OtpConfigured() bool {
+	return strings.TrimSpace(m.settingService.GetDomainOtpSecret()) != ""
 }
 
 // Enable performs the full flow. totpCode gates the operation; subdomain is
@@ -198,18 +224,43 @@ func (m *Manager) Enable(ctx context.Context, subdomain, totpCode string) (Resul
 
 	// --- local changes ---
 	prevState := m.state()
-	if err := m.applyInbounds(fqdn, certDir); err != nil {
+	skipped, err := m.applyInbounds(fqdn, certDir)
+	if err != nil {
 		_ = cf.deleteRecord(ctx, zoneID, recordID)
 		_ = m.restoreInbounds()
 		return m.snapshot(prevState), fmt.Errorf("切换入站失败：%w", err)
 	}
 	_ = m.settingService.SetDomainFqdn(fqdn)
-	st := storedState{Enabled: true, FQDN: fqdn, IP: ip, RecordID: recordID, CertMode: certMode, CertPath: certDir, Proxied: true}
+
+	// 自动生成优选域名组：只挂「WS + TLS + CF HTTPS 端口」的加密入站。
+	//
+	// 这一步是**尽力而为**的：优选域名依赖外部 DNS，任何一个环节失败都不应该
+	// 让已经成功的域名功能回滚。失败只作为警告返回给操作者。
+	warnings := append([]string{}, skipped...)
+	prefDomains, prefRejected, prefWarn, prefErr := SyncPreferredHosts(ctx, fqdn, PreferredDomainCandidates)
+	warnings = append(warnings, prefWarn...)
+	if prefErr != nil {
+		warnings = append(warnings, "优选域名生成失败："+prefErr.Error())
+	}
+	if n := len(prefRejected); n > 0 {
+		warnings = append(warnings, fmt.Sprintf(
+			"已剔除 %d 个未通过 Cloudflare 网段校验的候选域名（失效或已不指向 CF）", n))
+	}
+
+	st := storedState{
+		Enabled: true, FQDN: fqdn, IP: ip, RecordID: recordID,
+		CertMode: certMode, CertPath: certDir, Proxied: true,
+		PreferredDomains:       prefDomains,
+		PreferredRejectedCount: len(prefRejected),
+	}
 	if err := m.saveState(st); err != nil {
 		return m.snapshot(prevState), err
 	}
 	_ = m.settingService.SetDomainEnabled(true)
-	return m.snapshot(st), nil
+	res := m.snapshot(st)
+	res.Warnings = warnings
+	res.PreferredRejected = prefRejected
+	return res, nil
 }
 
 // Disable removes the DNS record, restores the WS inbounds to plain WebSocket
@@ -227,6 +278,8 @@ func (m *Manager) Disable(ctx context.Context, totpCode string) (Result, error) 
 		}
 	}
 	_ = m.restoreInbounds()
+	// 优选组是本功能生成的，停用时一并清掉，避免订阅里留下指向失效域名的节点。
+	_ = RemovePreferredHosts()
 	_ = m.settingService.SetDomainFqdn("")
 	_ = m.settingService.SetDomainEnabled(false)
 	clear := storedState{Enabled: false}
@@ -238,14 +291,46 @@ func (m *Manager) Disable(ctx context.Context, totpCode string) (Result, error) 
 // ------------------------- inbound rewrite -------------------------
 //
 
-func (m *Manager) applyInbounds(fqdn, certDir string) error {
+// applyInbounds 把域名功能管理的 WS 入站切到 WS+TLS。
+//
+// 这里必须按 Cloudflare 的端口语义分情况处理（实测结论见 preferred.go 顶部说明）：
+//
+//   - 入站位于 CF 的 **HTTPS 端口**（443/2053/2083/2087/2096/8443）：
+//     客户端到 CF 是 TLS，CF 回源也是 TLS —— 可以且应当切成 TLS，切换后全程加密。
+//
+//   - 入站位于 CF 的 **纯 HTTP 端口**（2052 等）：CF 在这类端口上**不接受客户端的
+//     TLS**，回源也是明文。若强行切成 TLS，订阅里会显示 tls 但客户端根本连不上
+//     （边缘拒绝 TLS 握手），节点直接废掉。所以保持它原本的明文 WS 配置不动，
+//     让它继续作为明文节点可用。
+//
+// 返回被跳过的入站说明，供上层提示操作者。
+func (m *Manager) applyInbounds(fqdn, certDir string) (skipped []string, err error) {
 	for _, remark := range []string{wsVLESSRemark, wsVMessRemark} {
+		port, err := inboundPortByRemark(remark)
+		if err != nil {
+			return skipped, err
+		}
+		if IsCFHTTPOnlyPort(port) {
+			skipped = append(skipped, fmt.Sprintf(
+				"%s 位于 Cloudflare 的纯 HTTP 端口 %d：该端口不支持 TLS，已保持明文以免节点失效",
+				remark, port))
+			continue
+		}
 		if err := rewriteWSInbound(remark, fqdn, certDir); err != nil {
-			return err
+			return skipped, err
 		}
 	}
 	m.restartXray()
-	return nil
+	return skipped, nil
+}
+
+// inboundPortByRemark 查出入站的监听端口。
+func inboundPortByRemark(remark string) (int, error) {
+	var ib model.Inbound
+	if err := database.GetDB().Where("remark = ?", remark).First(&ib).Error; err != nil {
+		return 0, fmt.Errorf("找不到入站 %s", remark)
+	}
+	return ib.Port, nil
 }
 
 func (m *Manager) restoreInbounds() error {
@@ -297,7 +382,17 @@ func rewriteWSInbound(remark, fqdn, certDir string) error {
 				"keyFile":         filepath.Join(certDir, "privkey.pem"),
 				"ocspStapling":    0, "oneTimeLoading": false, "usage": "encipherment", "buildChain": false,
 			}},
-			"alpn": []any{"h2", "http/1.1"},
+			// 只声明 http/1.1 —— 这里**不能**带上 h2。
+			//
+			// WebSocket 无法在 HTTP/2 上运行。若声明 ["h2","http/1.1"]，
+			// 客户端与 Cloudflare 握手时 CF 会协商出 h2，客户端随即失败：
+			//
+			//   websocket: protocol "h2" was given but is not supported
+			//   malformed HTTP response "\x00\x00\x12\x04..."  (HTTP/2 SETTINGS 帧)
+			//
+			// 实测：同一节点 alpn=http/1.1 时 generate_204 返回 204；
+			// alpn=h2,http/1.1 时直接 000 连不上。不要改回两个都写。
+			"alpn": []any{"http/1.1"},
 		}
 		if ws, ok := stream["wsSettings"].(map[string]any); ok {
 			ws["host"] = fqdn

@@ -47,7 +47,7 @@ func TestFetchSubscriptionLinksSharesConcurrentRefresh(t *testing.T) {
 	var wg sync.WaitGroup
 	for range callers {
 		wg.Go(func() {
-			results <- fetchSubscriptionLinks(srv.URL).links
+			results <- fetchSubscriptionLinks(srv.URL, true).links
 		})
 	}
 
@@ -76,7 +76,7 @@ func TestFetchSubscriptionLinksBoundsCacheSize(t *testing.T) {
 	defer srv.Close()
 
 	for i := range subscriptionCacheCapacity + 1 {
-		links := fetchSubscriptionLinks(srv.URL + "?id=" + strconv.Itoa(i)).links
+		links := fetchSubscriptionLinks(srv.URL+"?id="+strconv.Itoa(i), true).links
 		if len(links) != 1 {
 			t.Fatalf("links at %d = %#v", i, links)
 		}
@@ -125,12 +125,12 @@ func TestFetchSubscriptionLinksSharesStaleResultAfterRefreshFailure(t *testing.T
 	var wg sync.WaitGroup
 	for range callers {
 		wg.Go(func() {
-			results <- fetchSubscriptionLinks(staleURL).links
+			results <- fetchSubscriptionLinks(staleURL, true).links
 		})
 	}
 
 	time.Sleep(100 * time.Millisecond)
-	if links := fetchSubscriptionLinks(srv.URL + "/fresh").links; len(links) != 1 || links[0] != "vless://fresh@example.com:443" {
+	if links := fetchSubscriptionLinks(srv.URL+"/fresh", true).links; len(links) != 1 || links[0] != "vless://fresh@example.com:443" {
 		t.Fatalf("fresh links = %#v", links)
 	}
 	close(release)
@@ -153,7 +153,7 @@ func TestDoFetchSubscriptionLinks_RejectsOversizedBody(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	links, err := doFetchSubscriptionLinks(srv.URL)
+	links, err := doFetchSubscriptionLinks(srv.URL, true)
 	if !errors.Is(err, errSubscriptionBodyTooLarge) {
 		t.Fatalf("err = %v, want errSubscriptionBodyTooLarge", err)
 	}
@@ -173,7 +173,7 @@ func TestDoFetchSubscriptionLinks_AcceptsBodyAtLimit(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	links, err := doFetchSubscriptionLinks(srv.URL)
+	links, err := doFetchSubscriptionLinks(srv.URL, true)
 	if err != nil {
 		t.Fatalf("unexpected err: %v", err)
 	}
@@ -210,6 +210,9 @@ func TestRecordExternalSubscriptionFetchStampsEveryRowForTheURL(t *testing.T) {
 			ClientId: owners[i].Id,
 			Kind:     model.ExternalLinkKindSubscription,
 			Value:    srv.URL,
+			// httptest 只能监听 127.0.0.1，而抓取默认拒绝私网/回环（防 SSRF）。
+			// 这里显式打开放行开关——测的是「记录抓取状态」的语义，不是 SSRF 策略。
+			AllowPrivate: true,
 		}
 		if err := db.Create(&row).Error; err != nil {
 			t.Fatalf("seed external link %d: %v", i, err)

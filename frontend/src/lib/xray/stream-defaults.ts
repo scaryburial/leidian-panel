@@ -9,6 +9,8 @@ import {
 } from '@/schemas/protocols/stream';
 import { RealityStreamSettingsSchema, TlsStreamSettingsSchema } from '@/schemas/protocols/security';
 
+import { tlsAlpnForNetwork } from './inbound-tls-defaults';
+
 const NETWORK_KEY_MAP = {
   tcp: 'tcpSettings',
   kcp: 'kcpSettings',
@@ -72,6 +74,14 @@ export function fillStreamDefaults(stream: Record<string, unknown>): Record<stri
   const sec = securitySchemaFor(security);
   if (sec) {
     out[sec.key] = parseOrDefault(sec.schema, out[sec.key]);
+  }
+  // A ws/httpupgrade stream must never advertise h2, whatever the stored blob or
+  // the schema default says — the schema default is transport-blind.
+  if (security === 'tls') {
+    const tls = out.tlsSettings as Record<string, unknown> | undefined;
+    if (tls && typeof tls === 'object') {
+      out.tlsSettings = { ...tls, alpn: tlsAlpnForNetwork(network, tls.alpn) };
+    }
   }
   return out;
 }

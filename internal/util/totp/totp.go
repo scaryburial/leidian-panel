@@ -69,3 +69,15 @@ func Verify(secret, code string) bool {
 	}
 	return false
 }
+
+// ValidSecret reports whether secret is a usable base32 TOTP secret. Callers
+// that store a secret should reject a value failing this check, otherwise a
+// typo silently locks the operator out of every TOTP-gated operation.
+func ValidSecret(secret string) bool {
+	normalized := normalizeSecret(secret)
+	if normalized == "" {
+		return false
+	}
+	key, err := base32.StdEncoding.DecodeString(normalized)
+	return err == nil && len(key) > 0
+}

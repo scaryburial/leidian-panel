@@ -12,6 +12,7 @@ import (
 	"github.com/mhsanaei/3x-ui/v3/internal/database"
 	"github.com/mhsanaei/3x-ui/v3/internal/database/model"
 	"github.com/mhsanaei/3x-ui/v3/internal/logger"
+	"github.com/mhsanaei/3x-ui/v3/internal/util/netsafe"
 )
 
 // External subscription fetching: a "subscription" external link is a remote
@@ -25,7 +26,17 @@ const (
 	subscriptionCacheCapacity = 256
 )
 
-var subscriptionHTTPClient = &http.Client{Timeout: 6 * time.Second}
+// subscriptionHTTPClient 抓取客户端配置里的「外部订阅」。
+//
+// 必须挂 netsafe.SSRFGuardedDialContext：该 URL 由管理员在客户端外部链接里填写，
+// 而抓取由**无需认证**的订阅请求触发，面板进程通常以 root 运行。没有 guard 时，
+// 一条 http://169.254.169.254/... 或 http://127.0.0.1:<port>/ 就能让面板去探测
+// 内网，并借响应差异（拒绝/超时/非 2xx）做端口存活性判断。
+// 项目其他出站路径（outbound_subscription.go）早已使用同一 guard，这里补齐。
+var subscriptionHTTPClient = &http.Client{
+	Timeout:   6 * time.Second,
+	Transport: &http.Transport{DialContext: netsafe.SSRFGuardedDialContext},
+}
 
 type subscriptionCacheEntry struct {
 	links     []string
@@ -58,7 +69,11 @@ type subscriptionFetchResult struct {
 // subscription URL, using a short-lived cache. On any failure it returns the
 // last cached value (if present) or nil — never an error, so the rest of the
 // client's subscription still renders.
-func fetchSubscriptionLinks(rawURL string) subscriptionFetchResult {
+//
+// allowPrivate 是显式的内网逃生口，语义与 outbound_subscription 的
+// AllowPrivate 一致：默认 false 时拒绝解析到私网/回环/链路本地的目标，
+// 生产调用方一律传 false；只有测试（httptest 监听 127.0.0.1）才传 true。
+func fetchSubscriptionLinks(rawURL string, allowPrivate bool) subscriptionFetchResult {
 	rawURL = strings.TrimSpace(rawURL)
 	if rawURL == "" {
 		return subscriptionFetchResult{}
@@ -85,7 +100,7 @@ func fetchSubscriptionLinks(rawURL string) subscriptionFetchResult {
 		subscriptionCache.Unlock()
 	}()
 
-	links, err := doFetchSubscriptionLinks(rawURL)
+	links, err := doFetchSubscriptionLinks(rawURL, allowPrivate)
 	if err != nil {
 		if ok {
 			fetch.links = cached.links
@@ -143,8 +158,10 @@ func recordExternalSubscriptionFetch(rawURL string, fetchErr error) {
 	}
 }
 
-func doFetchSubscriptionLinks(rawURL string) ([]string, error) {
-	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, rawURL, nil)
+func doFetchSubscriptionLinks(rawURL string, allowPrivate bool) ([]string, error) {
+	// SSRF guard 的放行开关走 context：默认拦截私网，与 outbound_subscription 一致。
+	reqCtx := netsafe.ContextWithAllowPrivate(context.Background(), allowPrivate)
+	req, err := http.NewRequestWithContext(reqCtx, http.MethodGet, rawURL, nil)
 	if err != nil {
 		return nil, err
 	}

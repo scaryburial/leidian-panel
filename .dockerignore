@@ -8,3 +8,14 @@ pgdata
 x-ui/
 *.db
 *.dump
+
+# 凭据与本地构建产物不能进构建上下文：
+# .env 可能含 XUI_DB_DSN 明文口令（.gitignore 已忽略它，但 .dockerignore 之前漏了，
+# 而 Dockerfile 用 `COPY . .`，会把本地 .env 复制进 builder 层）。
+.env
+.env.*
+!.env.example
+*.jks
+*.keystore
+dist/
+release/

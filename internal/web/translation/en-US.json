@@ -143,7 +143,10 @@
       "saved": "Saved",
       "enabled": "Domain feature enabled",
       "disabled": "Domain feature disabled",
-      "failed": "Failed"
+      "failed": "Failed",
+      "preferred": "Preferred domains",
+      "preferredHint": "Attached only to WS+TLS inbounds listening on a Cloudflare HTTPS port, so every hop stays encrypted. Each candidate is checked against Cloudflare's published IP ranges; dead or non-Cloudflare ones are dropped.",
+      "warnings": "Notes"
     },
     "login": {
       "hello": "Hello",

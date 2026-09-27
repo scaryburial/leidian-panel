@@ -24,6 +24,10 @@ type externalLinkEntry struct {
 	Email      string
 	Enable     bool
 	Active     bool
+	// AllowPrivate 是该条外部订阅的内网放行开关，语义与
+	// OutboundSubscription.AllowPrivate 一致：默认 false，只有操作者显式为一个
+	// 自建的内网订阅源打开时才允许解析到私网/回环地址。
+	AllowPrivate bool
 }
 
 // expandedLink is a single share link contributed by an entry, with the display
@@ -68,13 +72,14 @@ func (s *SubService) getClientExternalLinksBySubId(subId string) ([]externalLink
 	for _, r := range rows {
 		rec := byId[r.ClientId]
 		out = append(out, externalLinkEntry{
-			Kind:       r.Kind,
-			Value:      r.Value,
-			Remark:     r.Remark,
-			NamePrefix: r.NamePrefix,
-			Email:      rec.Email,
-			Enable:     rec.Enable,
-			Active:     rec.Enable && (rec.ExpiryTime <= 0 || rec.ExpiryTime > now),
+			Kind:         r.Kind,
+			Value:        r.Value,
+			Remark:       r.Remark,
+			NamePrefix:   r.NamePrefix,
+			Email:        rec.Email,
+			Enable:       rec.Enable,
+			Active:       rec.Enable && (rec.ExpiryTime <= 0 || rec.ExpiryTime > now),
+			AllowPrivate: r.AllowPrivate,
 		})
 	}
 	return out, nil
@@ -84,7 +89,10 @@ func (s *SubService) getClientExternalLinksBySubId(subId string) ([]externalLink
 // Names are never blank, so Clash/JSON do not fall back to the client email.
 func expandEntry(e externalLinkEntry) []expandedLink {
 	if e.Kind == model.ExternalLinkKindSubscription {
-		res := fetchSubscriptionLinks(e.Value)
+		// allowPrivate 默认 false：这个 URL 由管理员填写，却由**匿名订阅请求**
+		// 触发抓取，因此默认禁止它把面板当作内网探测器。自建内网订阅源需要
+		// 逐条显式打开该开关（与 outbound_subscription 的策略一致）。
+		res := fetchSubscriptionLinks(e.Value, e.AllowPrivate)
 		if res.fetched {
 			recordExternalSubscriptionFetch(e.Value, res.err)
 		}

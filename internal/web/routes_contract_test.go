@@ -61,9 +61,26 @@ func registeredContractRoutes(t *testing.T) map[string]bool {
 	if err != nil {
 		t.Fatalf("init router: %v", err)
 	}
+	// Every route is mounted under the panel's configured base path
+	// (webBasePath -- "/ui3344/" on this build), while endpoints.ts documents
+	// paths relative to that base: the frontend prepends window.X_UI_BASE_PATH
+	// to each one before calling. Strip the prefix so the two registries, one
+	// absolute and one panel-relative, can be diffed.
+	basePath, err := s.settingService.GetBasePath()
+	if err != nil {
+		t.Fatalf("get base path: %v", err)
+	}
+	basePrefix := strings.TrimSuffix(basePath, "/")
 	routes := make(map[string]bool)
 	for _, r := range engine.Routes() {
-		routes[r.Method+" "+r.Path] = true
+		path := r.Path
+		if basePrefix != "" {
+			path = strings.TrimPrefix(path, basePrefix)
+		}
+		if path == "" {
+			path = "/"
+		}
+		routes[r.Method+" "+path] = true
 	}
 	if len(routes) == 0 {
 		t.Fatal("no routes registered; router construction is broken")

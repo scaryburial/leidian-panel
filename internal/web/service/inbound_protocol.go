@@ -53,6 +53,35 @@ func inboundCanEnableTlsFlow(protocol, streamSettings, settings string) bool {
 	}
 }
 
+// transportCanNeverUseVisionFlow reports whether a stream's transport makes the
+// XTLS Vision flow permanently impossible, as opposed to merely not-yet-enabled.
+//
+// Vision hands the *raw* connection to the VLESS layer, so it needs transport
+// TLS/Reality under it. The multiplexed transports below carry every request
+// through a stream layer Vision cannot hook into, and inboundCanEnableTlsFlow
+// rejects all of them unconditionally — so their verdict can never be reversed
+// by a later edit of the same inbound. Keeping the two lists in agreement is
+// what makes it safe to delete a stored flow here: TCP without TLS and XHTTP
+// without vlessenc are absent on purpose, because both become Vision-capable
+// once TLS / vlessenc is configured and their clients' intent must survive.
+func transportCanNeverUseVisionFlow(streamSettings string) bool {
+	if streamSettings == "" {
+		return false
+	}
+	var stream struct {
+		Network string `json:"network"`
+	}
+	if err := json.Unmarshal([]byte(streamSettings), &stream); err != nil {
+		return false
+	}
+	switch stream.Network {
+	case "ws", "httpupgrade", "grpc", "kcp", "quic", "http":
+		return true
+	default:
+		return false
+	}
+}
+
 // nodeEligibleProtocols mirrors the frontend's NODE_ELIGIBLE_PROTOCOLS. The
 // sidecar-managed protocols are absent because their reconcile loops only query
 // NodeID IS NULL rows, so a node-assigned one would never be reconciled at all.

@@ -5,7 +5,7 @@ import type { MessageInstance } from 'antd/es/message/interface';
 import type { HookAPI as ModalHookAPI } from 'antd/es/modal/useModal';
 
 import { HttpUtil, RandomUtil } from '@/utils';
-import { createTlsSettingsWithDefaultCert } from '@/lib/xray/inbound-tls-defaults';
+import { createTlsSettingsWithDefaultCert, tlsAlpnForNetwork } from '@/lib/xray/inbound-tls-defaults';
 import { RealityStreamSettingsSchema } from '@/schemas/protocols/security/reality';
 import type { InboundFormValues } from '@/schemas/forms/inbound-form';
 import type { RealityScanResult } from '@/generated/types';
@@ -328,7 +328,12 @@ export function useSecurityActions({
     delete cleaned.tlsSettings;
     delete cleaned.realitySettings;
     if (next === 'tls') {
-      cleaned.tlsSettings = createTlsSettingsWithDefaultCert();
+      const tls = createTlsSettingsWithDefaultCert();
+      // WebSocket / HTTPUpgrade cannot run on h2, and this default is also the
+      // one a user reaches by picking TLS before the transport: see
+      // tlsAlpnForNetwork.
+      tls.alpn = tlsAlpnForNetwork(current.network as string | undefined, tls.alpn);
+      cleaned.tlsSettings = tls;
     }
     if (next === 'reality') {
       const reality = RealityStreamSettingsSchema.parse({}) as Record<string, unknown>;

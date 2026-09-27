@@ -16,6 +16,10 @@ interface DomainStatus {
   proxied: boolean;
   cfConfigured: boolean;
   steps?: string[];
+  preferredCount?: number;
+  preferredDomains?: string[];
+  preferredRejected?: { domain: string; reason: string }[];
+  warnings?: string[];
 }
 
 const EMPTY: DomainStatus = {
@@ -27,12 +31,15 @@ const EMPTY: DomainStatus = {
   certPath: '',
   proxied: false,
   cfConfigured: false,
+  preferredCount: 0,
+  preferredDomains: [],
 };
 
 export default function DomainPage() {
   const { t } = useTranslation();
   const [status, setStatus] = useState<DomainStatus>(EMPTY);
   const [steps, setSteps] = useState<string[]>([]);
+  const [warnings, setWarnings] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [form] = Form.useForm<{ subdomain: string; totp: string }>();
@@ -68,6 +75,7 @@ export default function DomainPage() {
     );
     setBusy(false);
     if (r?.success) {
+      setWarnings(r.obj?.warnings ?? []);
       message.success(t('pages.domain.enabled'));
       await refresh();
     } else {
@@ -85,6 +93,7 @@ export default function DomainPage() {
     );
     setBusy(false);
     if (r?.success) {
+      setWarnings([]);
       message.success(t('pages.domain.disabled'));
       await refresh();
     } else {
@@ -137,7 +146,28 @@ export default function DomainPage() {
           <Descriptions.Item label={t('pages.domain.cfToken')}>
             {status.cfConfigured ? <Tag color="green">{t('pages.domain.configured')}</Tag> : <Tag color="red">-</Tag>}
           </Descriptions.Item>
+          <Descriptions.Item label={t('pages.domain.preferred')}>
+            {status.preferredCount ? (
+              <Tag color="green">{status.preferredCount}</Tag>
+            ) : (
+              <Tag>-</Tag>
+            )}
+          </Descriptions.Item>
         </Descriptions>
+
+        <div style={{ marginBottom: 16, fontSize: 12, opacity: 0.65 }}>
+          {t('pages.domain.preferredHint')}
+        </div>
+
+        {status.preferredDomains && status.preferredDomains.length > 0 && (
+          <div style={{ marginBottom: 16 }}>
+            <Space size={[4, 8]} wrap>
+              {status.preferredDomains.map((d) => (
+                <Tag key={d}>{d}</Tag>
+              ))}
+            </Space>
+          </div>
+        )}
 
         <Form form={form} layout="vertical" style={{ maxWidth: 520 }}>
           <Form.Item name="subdomain" label={t('pages.domain.subdomain')}>
@@ -169,6 +199,22 @@ export default function DomainPage() {
                   <li key={i}>{s}</li>
                 ))}
               </ol>
+            }
+          />
+        )}
+
+        {warnings.length > 0 && (
+          <Alert
+            type="info"
+            showIcon
+            style={{ marginTop: 16 }}
+            message={t('pages.domain.warnings')}
+            description={
+              <ul style={{ margin: 0, paddingInlineStart: 20 }}>
+                {warnings.map((w, i) => (
+                  <li key={i}>{w}</li>
+                ))}
+              </ul>
             }
           />
         )}

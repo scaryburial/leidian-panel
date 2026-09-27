@@ -52,16 +52,16 @@ var (
 )
 
 var defaultValueMap = map[string]string{
-	"xrayTemplateConfig": xrayTemplateConfig,
-	"webListen":          "",
-	"webDomain":          "",
-	"webPort":            "33441",
-	"webCertFile":        "",
-	"webKeyFile":         "",
-	"secret":             random.Seq(32),
-	"panelGuid":          uuid.NewString(),
-	"apiToken":           "",
-	"relayConfig":        "",
+	"xrayTemplateConfig":     xrayTemplateConfig,
+	"webListen":              "",
+	"webDomain":              "",
+	"webPort":                "33441",
+	"webCertFile":            "",
+	"webKeyFile":             "",
+	"secret":                 random.Seq(32),
+	"panelGuid":              uuid.NewString(),
+	"apiToken":               "",
+	"relayConfig":            "",
 	"panelUpdateCheckEnable": "true",
 	"panelUpdateRepo":        "scaryburial/leidian-panel",
 	"cfApiToken":             defaultCFApiToken,
@@ -69,7 +69,7 @@ var defaultValueMap = map[string]string{
 	"domainOtpSecret":        defaultDomainOtpSecret,
 	"domainConfig":           "",
 	"domainEnabled":          "false",
-	"reverseConfig":      "",
+	"reverseConfig":          "",
 	// Node mTLS material (opt-in). All default empty: the CA + master client
 	// cert are minted lazily on first use, and the node-side trust CA is pasted
 	// in by the operator. Kept out of entity.AllSetting so private keys never

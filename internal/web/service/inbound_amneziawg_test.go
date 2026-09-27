@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -45,11 +46,20 @@ func TestCheckForwardedPortsConflict_CollidesWithPanelPort(t *testing.T) {
 	if err != nil {
 		t.Fatalf("loadPortConflictContext: %v", err)
 	}
-	// getString falls back to defaultValueMap's "webPort": "2053" on a fresh
-	// DB with no explicit setting row.
-	hit := svc.checkForwardedPortsConflict(ctx, "2053")
-	if !strings.Contains(hit, "panel") {
-		t.Fatalf("expected a collision naming the panel's own port, got %q", hit)
+	// getString falls back to defaultValueMap's "webPort" (33441 on this build)
+	// on a fresh DB with no explicit setting row, so read the panel's port from
+	// that same factory default instead of pinning a stale literal: the point
+	// here is that the panel's own port is protected, whatever it is.
+	factoryPort, convErr := strconv.Atoi(defaultValueMap["webPort"])
+	if convErr != nil {
+		t.Fatalf("factory webPort %q is not a number: %v", defaultValueMap["webPort"], convErr)
+	}
+	if ctx.webPort != factoryPort {
+		t.Fatalf("port context loaded webPort %d, want the factory default %d", ctx.webPort, factoryPort)
+	}
+	hit := svc.checkForwardedPortsConflict(ctx, strconv.Itoa(factoryPort))
+	if !strings.Contains(hit, "panel") || !strings.Contains(hit, strconv.Itoa(factoryPort)) {
+		t.Fatalf("expected a collision naming the panel's own port %d, got %q", factoryPort, hit)
 	}
 }
 

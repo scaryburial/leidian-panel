@@ -42,7 +42,11 @@ type PanelUpdateInfo struct {
 }
 
 const (
-	panelUpdaterURL      = "https://raw.githubusercontent.com/MHSanaei/3x-ui/main/update.sh"
+	// 必须指向**本仓库**。原先指向 MHSanaei/3x-ui 的 main 分支：那段脚本会被下载
+	// 后以 root 执行（systemd-run / bash -lc），等于把 root 交给一个可变引用。
+	// 该自更新路径目前在 StartUpdate/StartUpdateChannel 里已被禁用，这里改成自己的
+	// 仓库属于纵深防御——万一将来重新启用，也不会去执行上游代码。
+	panelUpdaterURL      = "https://raw.githubusercontent.com/scaryburial/leidian-panel/main/update.sh"
 	maxPanelUpdaterBytes = 2 << 20
 	// devReleaseTag is the fixed-tag rolling pre-release the CI force-moves to the
 	// newest main commit; the dev update channel installs from it.

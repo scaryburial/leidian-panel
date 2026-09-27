@@ -3,6 +3,7 @@ package controller
 import (
 	"github.com/gin-gonic/gin"
 
+	"github.com/mhsanaei/3x-ui/v3/internal/util/totp"
 	"github.com/mhsanaei/3x-ui/v3/internal/web/service"
 	"github.com/mhsanaei/3x-ui/v3/internal/web/service/domain"
 )
@@ -100,12 +101,29 @@ func (a *DomainController) setToken(c *gin.Context) {
 
 type domainOtpReq struct {
 	Secret string `json:"secret"`
+	Totp   string `json:"totp"`
 }
 
 func (a *DomainController) setOtp(c *gin.Context) {
 	var req domainOtpReq
 	if err := c.ShouldBindJSON(&req); err != nil {
 		jsonMsg(c, "参数错误："+err.Error(), err)
+		return
+	}
+	// 已配置密钥时，替换必须先出示当前动态码。
+	//
+	// 否则任何持有会话的人都能把自己的 base32 写进来，再用自己的动态码合法调用
+	// /domain/token、/domain/enable、/domain/disable —— 这个端点就成了绕过第二
+	// 因子的后门，而 setToken/Enable/Disable 全都依赖这道门。
+	//
+	// 首次设置（尚无密钥）没有可用动态码可验，只能放行引导路径；线上构建已通过
+	// -ldflags 注入默认密钥，因此正常情况下走的始终是校验分支。
+	if a.domainService.OtpConfigured() && !a.domainService.Authorize(req.Totp) {
+		jsonMsg(c, "动态码校验失败（TOTP）", nil)
+		return
+	}
+	if !totp.ValidSecret(req.Secret) {
+		jsonMsg(c, "密钥格式不正确（需要 base32，例如 JBSWY3DPEHPK3PXP）", nil)
 		return
 	}
 	if err := a.settingService.SetDomainOtpSecret(req.Secret); err != nil {

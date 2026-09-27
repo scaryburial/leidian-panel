@@ -39,6 +39,7 @@ import (
 	"github.com/mhsanaei/3x-ui/v3/internal/database/model"
 	"github.com/mhsanaei/3x-ui/v3/internal/logger"
 	"github.com/mhsanaei/3x-ui/v3/internal/util/common"
+	"github.com/mhsanaei/3x-ui/v3/internal/util/netsafe"
 	"github.com/mhsanaei/3x-ui/v3/internal/util/sys"
 	"github.com/mhsanaei/3x-ui/v3/internal/xray"
 
@@ -2635,8 +2636,13 @@ func (s *ServerService) GetRemoteCertHash(server string) ([]string, error) {
 		host, port = h, p
 	}
 
-	dialer := stdnet.Dialer{Timeout: 10 * time.Second}
-	tcpConn, err := dialer.Dial("tcp", stdnet.JoinHostPort(host, port))
+	// 必须走 netsafe 的 SSRF guard：server 参数来自管理员输入，而这个函数会以
+	// 面板进程的权限去连接任意 host:port。同包的 reality 扫描（reality_scan.go）
+	// 一直用的就是 guard；裸 net.Dialer 会留下一条内网探测通道
+	// （127.0.0.1、169.254.169.254、内网段），并可借错误文本区分端口是否开放。
+	dialCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	tcpConn, err := netsafe.SSRFGuardedDialContext(dialCtx, "tcp", stdnet.JoinHostPort(host, port))
 	if err != nil {
 		return nil, common.NewErrorf("failed to dial %s: %s", stdnet.JoinHostPort(host, port), err)
 	}

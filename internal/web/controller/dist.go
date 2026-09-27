@@ -110,14 +110,16 @@ func serveDistPage(c *gin.Context, name string) {
 		body = bytes.ReplaceAll(body, []byte(`href="/assets/`), []byte(`href="`+basePath+`assets/`))
 	}
 
+	// 这三行必须是 \u003c 这类转义。写成裸字符等于没有转义：
+	// basePath 里的一段 </script> 会直接闭合脚本标签并注入任意 HTML。
 	jsEscape := strings.NewReplacer(
 		`\`, `\\`,
 		`"`, `\"`,
 		"\n", `\n`,
 		"\r", `\r`,
-		"<", `<`,
-		">", `>`,
-		"&", `&`,
+		"<", `\u003c`,
+		">", `\u003e`,
+		"&", `\u0026`,
 	)
 	escapedBase := jsEscape.Replace(basePath)
 	csrfToken, err := session.EnsureCSRFToken(c)

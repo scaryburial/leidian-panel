@@ -1038,7 +1038,10 @@ type ClientExternalLink struct {
 	LastFetchAt    int64  `json:"lastFetchAt" gorm:"column:last_fetch_at;default:0"`
 	LastFetchError string `json:"lastFetchError" gorm:"column:last_fetch_error"`
 	SortIndex      int    `json:"sortIndex" gorm:"column:sort_index"`
-	CreatedAt      int64  `json:"createdAt" gorm:"autoCreateTime:milli"`
+	// AllowPrivate 允许该条外部订阅解析到私网/回环地址。默认 false：抓取由
+	// **匿名订阅请求**触发，默认不能把面板当成内网探测器。仅自建内网订阅源需要打开。
+	AllowPrivate bool  `json:"allowPrivate" gorm:"column:allow_private;default:false"`
+	CreatedAt    int64 `json:"createdAt" gorm:"autoCreateTime:milli"`
 }
 
 func (ClientExternalLink) TableName() string { return "client_external_links" }

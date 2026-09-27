@@ -1554,6 +1554,14 @@ export const sections: readonly Section[] = [
           '{\n  "success": true,\n  "obj": {\n    "user1": 1700000000,\n    "user2": 1699999000\n  }\n}',
       },
       {
+        method: 'POST',
+        path: '/panel/api/clients/onlineIps',
+        summary:
+          'Source IPs the core currently reports for every client holding a live connection (email → IPs), served from a short-lived cache. Live state, as opposed to the persisted history behind /panel/api/server/clientIps.',
+        response:
+          '{\n  "success": true,\n  "obj": {\n    "user1": ["203.0.113.5"]\n  }\n}',
+      },
+      {
         method: 'GET',
         path: '/panel/api/clients/traffic/:email',
         summary: 'Traffic counters for a client identified by email.',
@@ -2556,6 +2564,264 @@ export const sections: readonly Section[] = [
             optional: true,
           },
         ],
+      },
+    ],
+  },
+
+  {
+    id: 'relay',
+    title: 'Relay (中转)',
+    description:
+      'Simplified outbound relay: a rule names one SOCKS5/HTTP upstream plus the clients or inbounds it applies to. Saving rewrites the Xray template itself (outbounds and routing rules scoped under the ui3344-relay- tag prefix), so the operator never hand-edits config JSON. Fork-specific panel feature.',
+    endpoints: [
+      {
+        method: 'GET',
+        path: '/panel/api/relay/config',
+        summary:
+          'Return the stored relay rules in order (an empty array when none). Each rule carries id, enable, type ("socks" or "http"), host, port, user, pass, scope ("all" | "emails" | "inbounds"), emails, inbounds (inbound tags) and a panel-only remark.',
+        response:
+          '{\n  "success": true,\n  "obj": {\n    "rules": [\n      {\n        "id": "r1",\n        "enable": true,\n        "type": "socks",\n        "host": "10.0.0.9",\n        "port": 1080,\n        "user": "",\n        "pass": "",\n        "scope": "emails",\n        "emails": ["user1"],\n        "inbounds": [],\n        "remark": "home uplink"\n      }\n    ]\n  }\n}',
+      },
+      {
+        method: 'POST',
+        path: '/panel/api/relay/config',
+        summary:
+          'Replace the whole rule list and regenerate the Xray template from it. Rules are normalized (id sanitized, an unknown type falls back to "socks", an unknown scope to "all"), and rejected when an enabled rule has no valid host/port or no selection for its scope. The settings are persisted and Xray is restarted.',
+        params: [
+          {
+            name: 'rules',
+            in: 'body (json)',
+            type: 'object[]',
+            desc: 'Ordered relay rules, the same shape GET returns. The stored list is replaced wholesale; remark is panel-only and stored as sent.',
+          },
+        ],
+        body: '{\n  "rules": [\n    {\n      "id": "r1",\n      "enable": true,\n      "type": "socks",\n      "host": "10.0.0.9",\n      "port": 1080,\n      "scope": "all",\n      "emails": [],\n      "inbounds": [],\n      "remark": "home uplink"\n    }\n  ]\n}',
+        response: '{\n  "success": true,\n  "msg": "已保存"\n}',
+      },
+      {
+        method: 'POST',
+        path: '/panel/api/relay/test',
+        summary:
+          'Dial https://api.ipify.org through one upstream and report the egress IP it presents, so a rule can be checked before it is saved. Sends a single rule; nothing is persisted.',
+        params: [
+          {
+            name: 'type',
+            in: 'body (json)',
+            type: 'string',
+            desc: '"socks" (default) or "http".',
+            optional: true,
+          },
+          { name: 'host', in: 'body (json)', type: 'string', desc: 'Upstream host.' },
+          { name: 'port', in: 'body (json)', type: 'number', desc: 'Upstream port.' },
+          {
+            name: 'user',
+            in: 'body (json)',
+            type: 'string',
+            desc: 'Proxy username, when the upstream requires one.',
+            optional: true,
+          },
+          {
+            name: 'pass',
+            in: 'body (json)',
+            type: 'string',
+            desc: 'Proxy password, when the upstream requires one.',
+            optional: true,
+          },
+        ],
+        body: '{\n  "type": "socks",\n  "host": "10.0.0.9",\n  "port": 1080,\n  "user": "",\n  "pass": ""\n}',
+        response: '{\n  "success": true,\n  "obj": {\n    "egressIp": "203.0.113.5"\n  }\n}',
+      },
+    ],
+  },
+
+  {
+    id: 'reverse',
+    title: 'Reverse Proxy (反向代理)',
+    description:
+      'Xray VLESS simple reverse (portal/bridge): a bridge machine behind NAT dials the panel, and the clients the operator picks egress through it. Saving writes the reverse tag onto the chosen client and regenerates the Xray template. Fork-specific panel feature.',
+    endpoints: [
+      {
+        method: 'GET',
+        path: '/panel/api/reverse/config',
+        summary:
+          'Return the stored reverse config: enable, inboundId, clientEmail, tag, serverAddr, scope and emails. Before anything has been saved it answers with the defaults tag "ui3344rev" and scope "all".',
+        response:
+          '{\n  "success": true,\n  "obj": {\n    "enable": false,\n    "inboundId": 0,\n    "clientEmail": "",\n    "tag": "ui3344rev",\n    "serverAddr": "",\n    "scope": "all",\n    "emails": []\n  }\n}',
+      },
+      {
+        method: 'POST',
+        path: '/panel/api/reverse/config',
+        summary:
+          'Save the reverse config: set (or clear) the reverse tag on the chosen client, regenerate the Xray template from it, persist the settings and restart Xray. An enabled config needs inboundId and clientEmail; scope "emails" additionally needs at least one email.',
+        params: [
+          {
+            name: 'enable',
+            in: 'body (json)',
+            type: 'boolean',
+            desc: 'Turn the tunnel on or off.',
+          },
+          {
+            name: 'inboundId',
+            in: 'body (json)',
+            type: 'number',
+            desc: 'VLESS inbound the bridge connects to.',
+          },
+          {
+            name: 'clientEmail',
+            in: 'body (json)',
+            type: 'string',
+            desc: 'Client on that inbound carrying the reverse tag.',
+          },
+          {
+            name: 'tag',
+            in: 'body (json)',
+            type: 'string',
+            desc: 'Reverse/portal tag; both sides must match. Falls back to "ui3344rev".',
+            optional: true,
+          },
+          {
+            name: 'serverAddr',
+            in: 'body (json)',
+            type: 'string',
+            desc: 'Host the bridge dials.',
+          },
+          {
+            name: 'scope',
+            in: 'body (json)',
+            type: 'string',
+            desc: '"all" (default) or "emails".',
+            optional: true,
+          },
+          {
+            name: 'emails',
+            in: 'body (json)',
+            type: 'string[]',
+            desc: 'Clients that egress via the bridge; required when scope is "emails".',
+            optional: true,
+          },
+        ],
+        body: '{\n  "enable": true,\n  "inboundId": 3,\n  "clientEmail": "bridge@example.com",\n  "tag": "ui3344rev",\n  "serverAddr": "panel.example.com",\n  "scope": "emails",\n  "emails": ["user1"]\n}',
+        response: '{\n  "success": true,\n  "msg": "已保存"\n}',
+      },
+      {
+        method: 'GET',
+        path: '/panel/api/reverse/bridge',
+        summary:
+          'Render the config the bridge machine behind NAT has to run (obj.config, JSON text) from the saved settings: panel address, inbound port, client UUID and the reverse tag. Answers success:false when no inbound/client is configured yet.',
+        response:
+          '{\n  "success": true,\n  "obj": {\n    "config": "<client config JSON as text>"\n  }\n}',
+      },
+    ],
+  },
+
+  {
+    id: 'domain',
+    title: 'Domain (域名功能)',
+    description:
+      'Automatic Cloudflare subdomain + certificate + WS inbound switchover, plus the preferred-domain (优选域名) group it generates. Every call that touches Cloudflare or the inbounds is gated by the operator TOTP code. Fork-specific panel feature.',
+    endpoints: [
+      {
+        method: 'GET',
+        path: '/panel/api/domain/config',
+        summary:
+          'Current status snapshot: enabled, fqdn, rootDomain, serverIp, certMode ("origin-ca" | "self-signed"), certPath, proxied, cfConfigured, the built-in preferred-domain count/content and any warnings.',
+      },
+      {
+        method: 'POST',
+        path: '/panel/api/domain/preview',
+        summary:
+          'Return what enabling would do for a subdomain — the ordered step list, the resolved FQDN and the preferred-domain group that would be generated — without touching Cloudflare or any inbound.',
+        params: [
+          {
+            name: 'subdomain',
+            in: 'body (json)',
+            type: 'string',
+            desc: 'Subdomain to resolve under the configured root domain; empty picks the first preferred candidate.',
+            optional: true,
+          },
+        ],
+        body: '{\n  "subdomain": "node1"\n}',
+      },
+      {
+        method: 'POST',
+        path: '/panel/api/domain/enable',
+        summary:
+          'Run the whole flow: verify the TOTP, resolve the subdomain, probe this machine public IP, create or update the Cloudflare A record (proxied), obtain the certificate (ACME/CF Origin with a self-signed fallback), switch the managed WS inbounds to WS+TLS and build the preferred-domain group. Returns the resulting status snapshot.',
+        params: [
+          {
+            name: 'subdomain',
+            in: 'body (json)',
+            type: 'string',
+            desc: 'Subdomain to configure.',
+          },
+          {
+            name: 'totp',
+            in: 'body (json)',
+            type: 'string',
+            desc: 'Current TOTP code from the operator authenticator.',
+          },
+        ],
+        body: '{\n  "subdomain": "node1",\n  "totp": "123456"\n}',
+        response:
+          '{\n  "success": true,\n  "obj": {\n    "enabled": true,\n    "fqdn": "node1.example.com"\n  }\n}',
+      },
+      {
+        method: 'POST',
+        path: '/panel/api/domain/disable',
+        summary:
+          'Undo what enable did (revert the managed inbounds and drop the preferred-domain group), gated by TOTP. Returns the status after the change.',
+        params: [
+          {
+            name: 'totp',
+            in: 'body (json)',
+            type: 'string',
+            desc: 'Current TOTP code from the operator authenticator.',
+          },
+        ],
+        body: '{\n  "totp": "123456"\n}',
+      },
+      {
+        method: 'POST',
+        path: '/panel/api/domain/token',
+        summary:
+          'Store the Cloudflare API token that enable/disable/preview use, gated by TOTP. The token is never returned by any endpoint.',
+        params: [
+          {
+            name: 'token',
+            in: 'body (json)',
+            type: 'string',
+            desc: 'Cloudflare API token.',
+          },
+          {
+            name: 'totp',
+            in: 'body (json)',
+            type: 'string',
+            desc: 'Current TOTP code from the operator authenticator.',
+          },
+        ],
+        body: '{\n  "token": "cf-api-token",\n  "totp": "123456"\n}',
+      },
+      {
+        method: 'POST',
+        path: '/panel/api/domain/otp',
+        summary:
+          'Store the base32 TOTP secret that gates every other domain endpoint. The first call (no secret configured yet) bootstraps it; replacing an existing secret requires the current code, so a hijacked session cannot swap the second factor out.',
+        params: [
+          {
+            name: 'secret',
+            in: 'body (json)',
+            type: 'string',
+            desc: 'base32 secret, for example JBSWY3DPEHPK3PXP.',
+          },
+          {
+            name: 'totp',
+            in: 'body (json)',
+            type: 'string',
+            desc: 'Current TOTP code; required once a secret exists.',
+            optional: true,
+          },
+        ],
+        body: '{\n  "secret": "JBSWY3DPEHPK3PXP",\n  "totp": "123456"\n}',
       },
     ],
   },

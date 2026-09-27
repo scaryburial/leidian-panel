@@ -4402,6 +4402,18 @@
       "description": "Xray configuration template, outbound management, Warp/Nord/PIA integration, and config testing. All endpoints under /panel/api/xray."
     },
     {
+      "name": "Relay (中转)",
+      "description": "Simplified outbound relay: a rule names one SOCKS5/HTTP upstream plus the clients or inbounds it applies to. Saving rewrites the Xray template itself (outbounds and routing rules scoped under the ui3344-relay- tag prefix), so the operator never hand-edits config JSON. Fork-specific panel feature."
+    },
+    {
+      "name": "Reverse Proxy (反向代理)",
+      "description": "Xray VLESS simple reverse (portal/bridge): a bridge machine behind NAT dials the panel, and the clients the operator picks egress through it. Saving writes the reverse tag onto the chosen client and regenerates the Xray template. Fork-specific panel feature."
+    },
+    {
+      "name": "Domain (域名功能)",
+      "description": "Automatic Cloudflare subdomain + certificate + WS inbound switchover, plus the preferred-domain (优选域名) group it generates. Every call that touches Cloudflare or the inbounds is gated by the operator TOTP code. Fork-specific panel feature."
+    },
+    {
       "name": "Subscription Balancers",
       "description": "Client-side balancers for the JSON subscription: each enabled balancer is emitted as one extra config document whose members are the proxy outbounds of the selected inbounds (routing.balancers + burstObservatory). Managed in Settings → Sub Balancers."
     },
@@ -10139,6 +10151,44 @@
         }
       }
     },
+    "/panel/api/clients/onlineIps": {
+      "post": {
+        "tags": [
+          "Clients"
+        ],
+        "summary": "Source IPs the core currently reports for every client holding a live connection (email → IPs), served from a short-lived cache. Live state, as opposed to the persisted history behind /panel/api/server/clientIps.",
+        "operationId": "post_panel_api_clients_onlineIps",
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "msg": {
+                      "type": "string"
+                    },
+                    "obj": {}
+                  }
+                },
+                "example": {
+                  "success": true,
+                  "obj": {
+                    "user1": [
+                      "203.0.113.5"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/panel/api/clients/traffic/{email}": {
       "get": {
         "tags": [
@@ -14303,6 +14353,687 @@
                 "required": [
                   "url"
                 ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "msg": {
+                      "type": "string"
+                    },
+                    "obj": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/panel/api/relay/config": {
+      "get": {
+        "tags": [
+          "Relay (中转)"
+        ],
+        "summary": "Return the stored relay rules in order (an empty array when none). Each rule carries id, enable, type (\"socks\" or \"http\"), host, port, user, pass, scope (\"all\" | \"emails\" | \"inbounds\"), emails, inbounds (inbound tags) and a panel-only remark.",
+        "operationId": "get_panel_api_relay_config",
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "msg": {
+                      "type": "string"
+                    },
+                    "obj": {}
+                  }
+                },
+                "example": {
+                  "success": true,
+                  "obj": {
+                    "rules": [
+                      {
+                        "id": "r1",
+                        "enable": true,
+                        "type": "socks",
+                        "host": "10.0.0.9",
+                        "port": 1080,
+                        "user": "",
+                        "pass": "",
+                        "scope": "emails",
+                        "emails": [
+                          "user1"
+                        ],
+                        "inbounds": [],
+                        "remark": "home uplink"
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Relay (中转)"
+        ],
+        "summary": "Replace the whole rule list and regenerate the Xray template from it. Rules are normalized (id sanitized, an unknown type falls back to \"socks\", an unknown scope to \"all\"), and rejected when an enabled rule has no valid host/port or no selection for its scope. The settings are persisted and Xray is restarted.",
+        "operationId": "post_panel_api_relay_config",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "rules": {
+                    "type": "array",
+                    "items": {
+                      "type": "object"
+                    },
+                    "description": "Ordered relay rules, the same shape GET returns. The stored list is replaced wholesale; remark is panel-only and stored as sent."
+                  }
+                },
+                "required": [
+                  "rules"
+                ]
+              },
+              "example": {
+                "rules": [
+                  {
+                    "id": "r1",
+                    "enable": true,
+                    "type": "socks",
+                    "host": "10.0.0.9",
+                    "port": 1080,
+                    "scope": "all",
+                    "emails": [],
+                    "inbounds": [],
+                    "remark": "home uplink"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "msg": {
+                      "type": "string"
+                    },
+                    "obj": {}
+                  }
+                },
+                "example": {
+                  "success": true,
+                  "msg": "已保存"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/panel/api/relay/test": {
+      "post": {
+        "tags": [
+          "Relay (中转)"
+        ],
+        "summary": "Dial https://api.ipify.org through one upstream and report the egress IP it presents, so a rule can be checked before it is saved. Sends a single rule; nothing is persisted.",
+        "operationId": "post_panel_api_relay_test",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "type": {
+                    "type": "string",
+                    "description": "\"socks\" (default) or \"http\"."
+                  },
+                  "host": {
+                    "type": "string",
+                    "description": "Upstream host."
+                  },
+                  "port": {
+                    "type": "integer",
+                    "description": "Upstream port."
+                  },
+                  "user": {
+                    "type": "string",
+                    "description": "Proxy username, when the upstream requires one."
+                  },
+                  "pass": {
+                    "type": "string",
+                    "description": "Proxy password, when the upstream requires one."
+                  }
+                },
+                "required": [
+                  "host",
+                  "port"
+                ]
+              },
+              "example": {
+                "type": "socks",
+                "host": "10.0.0.9",
+                "port": 1080,
+                "user": "",
+                "pass": ""
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "msg": {
+                      "type": "string"
+                    },
+                    "obj": {}
+                  }
+                },
+                "example": {
+                  "success": true,
+                  "obj": {
+                    "egressIp": "203.0.113.5"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/panel/api/reverse/config": {
+      "get": {
+        "tags": [
+          "Reverse Proxy (反向代理)"
+        ],
+        "summary": "Return the stored reverse config: enable, inboundId, clientEmail, tag, serverAddr, scope and emails. Before anything has been saved it answers with the defaults tag \"ui3344rev\" and scope \"all\".",
+        "operationId": "get_panel_api_reverse_config",
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "msg": {
+                      "type": "string"
+                    },
+                    "obj": {}
+                  }
+                },
+                "example": {
+                  "success": true,
+                  "obj": {
+                    "enable": false,
+                    "inboundId": 0,
+                    "clientEmail": "",
+                    "tag": "ui3344rev",
+                    "serverAddr": "",
+                    "scope": "all",
+                    "emails": []
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Reverse Proxy (反向代理)"
+        ],
+        "summary": "Save the reverse config: set (or clear) the reverse tag on the chosen client, regenerate the Xray template from it, persist the settings and restart Xray. An enabled config needs inboundId and clientEmail; scope \"emails\" additionally needs at least one email.",
+        "operationId": "post_panel_api_reverse_config",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "enable": {
+                    "type": "boolean",
+                    "description": "Turn the tunnel on or off."
+                  },
+                  "inboundId": {
+                    "type": "integer",
+                    "description": "VLESS inbound the bridge connects to."
+                  },
+                  "clientEmail": {
+                    "type": "string",
+                    "description": "Client on that inbound carrying the reverse tag."
+                  },
+                  "tag": {
+                    "type": "string",
+                    "description": "Reverse/portal tag; both sides must match. Falls back to \"ui3344rev\"."
+                  },
+                  "serverAddr": {
+                    "type": "string",
+                    "description": "Host the bridge dials."
+                  },
+                  "scope": {
+                    "type": "string",
+                    "description": "\"all\" (default) or \"emails\"."
+                  },
+                  "emails": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    },
+                    "description": "Clients that egress via the bridge; required when scope is \"emails\"."
+                  }
+                },
+                "required": [
+                  "enable",
+                  "inboundId",
+                  "clientEmail",
+                  "serverAddr"
+                ]
+              },
+              "example": {
+                "enable": true,
+                "inboundId": 3,
+                "clientEmail": "bridge@example.com",
+                "tag": "ui3344rev",
+                "serverAddr": "panel.example.com",
+                "scope": "emails",
+                "emails": [
+                  "user1"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "msg": {
+                      "type": "string"
+                    },
+                    "obj": {}
+                  }
+                },
+                "example": {
+                  "success": true,
+                  "msg": "已保存"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/panel/api/reverse/bridge": {
+      "get": {
+        "tags": [
+          "Reverse Proxy (反向代理)"
+        ],
+        "summary": "Render the config the bridge machine behind NAT has to run (obj.config, JSON text) from the saved settings: panel address, inbound port, client UUID and the reverse tag. Answers success:false when no inbound/client is configured yet.",
+        "operationId": "get_panel_api_reverse_bridge",
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "msg": {
+                      "type": "string"
+                    },
+                    "obj": {}
+                  }
+                },
+                "example": {
+                  "success": true,
+                  "obj": {
+                    "config": "<client config JSON as text>"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/panel/api/domain/config": {
+      "get": {
+        "tags": [
+          "Domain (域名功能)"
+        ],
+        "summary": "Current status snapshot: enabled, fqdn, rootDomain, serverIp, certMode (\"origin-ca\" | \"self-signed\"), certPath, proxied, cfConfigured, the built-in preferred-domain count/content and any warnings.",
+        "operationId": "get_panel_api_domain_config",
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "msg": {
+                      "type": "string"
+                    },
+                    "obj": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/panel/api/domain/preview": {
+      "post": {
+        "tags": [
+          "Domain (域名功能)"
+        ],
+        "summary": "Return what enabling would do for a subdomain — the ordered step list, the resolved FQDN and the preferred-domain group that would be generated — without touching Cloudflare or any inbound.",
+        "operationId": "post_panel_api_domain_preview",
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "subdomain": {
+                    "type": "string",
+                    "description": "Subdomain to resolve under the configured root domain; empty picks the first preferred candidate."
+                  }
+                }
+              },
+              "example": {
+                "subdomain": "node1"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "msg": {
+                      "type": "string"
+                    },
+                    "obj": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/panel/api/domain/enable": {
+      "post": {
+        "tags": [
+          "Domain (域名功能)"
+        ],
+        "summary": "Run the whole flow: verify the TOTP, resolve the subdomain, probe this machine public IP, create or update the Cloudflare A record (proxied), obtain the certificate (ACME/CF Origin with a self-signed fallback), switch the managed WS inbounds to WS+TLS and build the preferred-domain group. Returns the resulting status snapshot.",
+        "operationId": "post_panel_api_domain_enable",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "subdomain": {
+                    "type": "string",
+                    "description": "Subdomain to configure."
+                  },
+                  "totp": {
+                    "type": "string",
+                    "description": "Current TOTP code from the operator authenticator."
+                  }
+                },
+                "required": [
+                  "subdomain",
+                  "totp"
+                ]
+              },
+              "example": {
+                "subdomain": "node1",
+                "totp": "123456"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "msg": {
+                      "type": "string"
+                    },
+                    "obj": {}
+                  }
+                },
+                "example": {
+                  "success": true,
+                  "obj": {
+                    "enabled": true,
+                    "fqdn": "node1.example.com"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/panel/api/domain/disable": {
+      "post": {
+        "tags": [
+          "Domain (域名功能)"
+        ],
+        "summary": "Undo what enable did (revert the managed inbounds and drop the preferred-domain group), gated by TOTP. Returns the status after the change.",
+        "operationId": "post_panel_api_domain_disable",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "totp": {
+                    "type": "string",
+                    "description": "Current TOTP code from the operator authenticator."
+                  }
+                },
+                "required": [
+                  "totp"
+                ]
+              },
+              "example": {
+                "totp": "123456"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "msg": {
+                      "type": "string"
+                    },
+                    "obj": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/panel/api/domain/token": {
+      "post": {
+        "tags": [
+          "Domain (域名功能)"
+        ],
+        "summary": "Store the Cloudflare API token that enable/disable/preview use, gated by TOTP. The token is never returned by any endpoint.",
+        "operationId": "post_panel_api_domain_token",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "token": {
+                    "type": "string",
+                    "description": "Cloudflare API token."
+                  },
+                  "totp": {
+                    "type": "string",
+                    "description": "Current TOTP code from the operator authenticator."
+                  }
+                },
+                "required": [
+                  "token",
+                  "totp"
+                ]
+              },
+              "example": {
+                "token": "cf-api-token",
+                "totp": "123456"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "msg": {
+                      "type": "string"
+                    },
+                    "obj": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/panel/api/domain/otp": {
+      "post": {
+        "tags": [
+          "Domain (域名功能)"
+        ],
+        "summary": "Store the base32 TOTP secret that gates every other domain endpoint. The first call (no secret configured yet) bootstraps it; replacing an existing secret requires the current code, so a hijacked session cannot swap the second factor out.",
+        "operationId": "post_panel_api_domain_otp",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "secret": {
+                    "type": "string",
+                    "description": "base32 secret, for example JBSWY3DPEHPK3PXP."
+                  },
+                  "totp": {
+                    "type": "string",
+                    "description": "Current TOTP code; required once a secret exists."
+                  }
+                },
+                "required": [
+                  "secret"
+                ]
+              },
+              "example": {
+                "secret": "JBSWY3DPEHPK3PXP",
+                "totp": "123456"
               }
             }
           }

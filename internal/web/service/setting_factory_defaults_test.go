@@ -26,7 +26,9 @@ func TestGetFactoryDefaultsExposesBrowserSafeKeys(t *testing.T) {
 		key  string
 		want string
 	}{
-		{key: "webPort", want: "2053"},
+		// 33441 is this panel's deliberate factory default; upstream 3x-ui
+		// ships 2053.
+		{key: "webPort", want: "33441"},
 		{key: "subPort", want: "2096"},
 	}
 	for _, tc := range tests {

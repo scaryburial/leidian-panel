@@ -143,7 +143,10 @@
       "saved": "已保存",
       "enabled": "域名功能已启用",
       "disabled": "域名功能已停用",
-      "failed": "操作失败"
+      "failed": "操作失败",
+      "preferred": "优选域名",
+      "preferredHint": "只挂在「WS + TLS 且监听 Cloudflare HTTPS 端口」的入站上，全程加密；候选域名逐个做 DNS + Cloudflare 网段校验，失效或已不指向 CF 的自动剔除。",
+      "warnings": "提示"
     },
     "login": {
       "hello": "你好",

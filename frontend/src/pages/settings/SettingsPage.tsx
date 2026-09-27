@@ -21,6 +21,8 @@ import { setMessageInstance } from '@/utils/messageBus';
 import { useTheme } from '@/hooks/useTheme';
 import { useMediaQuery } from '@/hooks/useMediaQuery';
 import { useAllSettings } from '@/api/queries/useAllSettings';
+import { useFactoryDefaults } from '@/api/queries/useFactoryDefaults';
+import { matchesFactoryDefault } from '@/components/ui/DefaultSettingTag';
 import { AllSettingSchema } from '@/schemas/setting';
 import AppSidebar from '@/layouts/AppSidebar';
 import GeneralTab from './GeneralTab';
@@ -89,6 +91,7 @@ export default function SettingsPage() {
     saveAll,
     savePayload,
   } = useAllSettings();
+  const factoryDefaults = useFactoryDefaults();
 
   const [entryHost] = useState(() => window.location.hostname);
   const [entryPort] = useState(() => window.location.port);
@@ -162,7 +165,9 @@ export default function SettingsPage() {
     if (window.location.protocol !== 'https:') {
       out.push(t('pages.settings.warnHttp'));
     }
-    if (allSetting.webPort === 2053) {
+    // 与出厂默认比对，而不是写死端口号：原来比的是上游的 2053，
+    // 本分支默认端口改成 33441 之后这个告警再也不会触发。
+    if (matchesFactoryDefault(allSetting.webPort, factoryDefaults.data?.webPort)) {
       out.push(t('pages.settings.warnDefaultPort'));
     }
     const segs = window.location.pathname.split('/').length < 4;

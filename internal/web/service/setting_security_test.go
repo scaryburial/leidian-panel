@@ -44,8 +44,10 @@ func TestResetSettingsRegeneratesSubscriptionPaths(t *testing.T) {
 	if paths["subPath"] == paths["subJsonPath"] || paths["subPath"] == paths["subClashPath"] || paths["subJsonPath"] == paths["subClashPath"] {
 		t.Fatalf("subscription paths must be distinct: %v", paths)
 	}
-	if port, err := s.GetPort(); err != nil || port != 2053 {
-		t.Fatalf("web port after reset = %d, %v; want 2053", port, err)
+	// ResetSettings deletes every settings row, so the port falls back to the
+	// factory default: 33441 on this build, not upstream's 2053.
+	if port, err := s.GetPort(); err != nil || port != 33441 {
+		t.Fatalf("web port after reset = %d, %v; want 33441", port, err)
 	}
 }
 

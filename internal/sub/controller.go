@@ -629,9 +629,9 @@ func (a *SUBController) serveSubPage(c *gin.Context, basePath string, page PageD
 		`"`, `\"`,
 		"\n", `\n`,
 		"\r", `\r`,
-		"<", `<`,
-		">", `>`,
-		"&", `&`,
+		"<", `\u003c`,
+		">", `\u003e`,
+		"&", `\u0026`,
 	)
 	escapedBase := jsEscape.Replace(basePath)
 

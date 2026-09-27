@@ -3,7 +3,7 @@ import { ObjectUtil } from '@/utils';
 export class AllSetting {
   webListen = '';
   webDomain = '';
-  webPort = 2053;
+  webPort = 33441;
   webCertFile = '';
   webKeyFile = '';
   webBasePath = '/';

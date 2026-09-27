@@ -196,6 +196,12 @@ func pathHasForbiddenChar(s string) bool {
 		if r == '\\' || r == ' ' || r < 0x20 || r == 0x7f {
 			return true
 		}
+		// < > & " ' ` 也必须拒绝：该值会被拼进 HTML/JS 上下文
+		// （见 dist.go 与 sub/controller.go 的 basePath 注入点）。
+		switch r {
+		case '<', '>', '&', '"', '\'', '`':
+			return true
+		}
 	}
 	return false
 }
@@ -288,6 +294,17 @@ func (s *AllSetting) CheckValid() error {
 	} {
 		if pathHasForbiddenChar(p.value) {
 			return common.NewError("URI path contains an invalid character:", p.name)
+		}
+	}
+
+	// 自定义订阅主题目录也必须校验：它会被拼成 <dir>/sub.html | <dir>/index.html
+	// 后读取并**回显给匿名订阅访问者**（internal/sub/controller.go 的 loadSubTemplate）。
+	// 不校验的话，把它指向任意目录即可读出该目录下同名文件。
+	// 这里只拒绝控制字符与上跳路径；符号链接与前缀白名单需要确定主题根目录，
+	// 留待后续（当前已能阻断 .. 穿越）。
+	if s.SubThemeDir != "" {
+		if pathHasForbiddenChar(s.SubThemeDir) || strings.Contains(s.SubThemeDir, "..") {
+			return common.NewError("订阅主题目录包含非法字符或上跳路径", s.SubThemeDir)
 		}
 	}
 

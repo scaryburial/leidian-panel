@@ -847,9 +847,23 @@ func (s *SubJsonService) genVless(subReq *SubService, inbound *model.Inbound, st
 	}
 	outbound.StreamSettings = streamSettings
 
-	// Add encryption for VLESS outbound from inbound settings
+	// VLESS 出站必须显式带 "encryption"，且空值要归一成 "none"。
+	//
+	// 入站 settings 里的 encryption 常常是**空串**（预设创建的 VLESS 入站就是
+	// "encryption": ""）。原样透传会让客户端加载配置时直接失败：
+	//
+	//   Failed to start: infra/conf: VLESS users: please add/set
+	//   "encryption":"none" for every user
+	//
+	// 这是实测用真实 Xray 内核加载本面板生成的 JSON 订阅时报出来的。
+	// 非空值仍原样保留，以便透传 VLESS 的新一代加密（mlkem768x25519plus...）。
 	inboundSettings := subReq.linkSettings(inbound)
-	encryption, _ := inboundSettings["encryption"].(string)
+	encryption := "none"
+	if v, ok := inboundSettings["encryption"].(string); ok {
+		if v = strings.TrimSpace(v); v != "" {
+			encryption = v
+		}
+	}
 
 	settings := map[string]any{
 		"address":    inbound.Listen,

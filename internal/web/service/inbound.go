@@ -1151,6 +1151,14 @@ func (s *InboundService) AddInbound(inbound *model.Inbound) (*model.Inbound, boo
 		}
 	}
 
+	// AddInbound is the one write path that never passes a client through
+	// clientWithInboundFlow (only client_crud/client_bulk do), so a VLESS
+	// WebSocket inbound created with a vision flow — as packaging/create-inbounds.py
+	// used to do for every VLESS client — was persisted with a flow the transport
+	// cannot express and Xray then rejects every connection. Clear it here, before
+	// the settings blob is rewritten and the clients are synced.
+	s.sanitizeVisionFlowForTransport(inbound, clients)
+
 	// Ensure created_at and updated_at on clients in settings
 	if len(clients) > 0 {
 		var settings map[string]any
@@ -1795,9 +1803,12 @@ func (s *InboundService) UpdateInbound(inbound *model.Inbound) (*model.Inbound, 
 		}
 
 		// Re-gate Vision flow now that the new stream/encryption is known: if this
-		// VLESS inbound just became flow-eligible (e.g. vlessenc was enabled on an
+		// VLESS inbound just became flow-eligible (e.g. vlessenc was enabled on a
 		// XHTTP inbound), restore Vision for clients whose intended flow is Vision
-		// but was stripped while the inbound was ineligible.
+		// but was stripped while the inbound was ineligible. On a transport that
+		// can never carry Vision (WebSocket and friends) the same call instead
+		// deletes the flow this inbound still holds, which is what heals an
+		// already-installed panel whose preset stamped Vision onto a ws inbound.
 		if !inbound.DisableFlow {
 			if restored, changed := s.restoreVisionFlowForEligibleInbound(tx, inbound.Settings, inbound.StreamSettings, inbound.Protocol); changed {
 				inbound.Settings = restored

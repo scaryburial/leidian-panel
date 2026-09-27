@@ -61,6 +61,9 @@ def ws(path):
     return json.dumps({"network": "ws", "security": "none", "wsSettings": {"path": path, "host": "", "headers": {}}})
 
 
+TLS_ALPN = ["http/1.1"]
+
+
 def tls_selfsigned():
     return json.dumps({
         "network": "tcp", "security": "tls",
@@ -69,7 +72,7 @@ def tls_selfsigned():
             "rejectUnknownSni": False, "allowInsecure": False,
             "certificates": [{"certificateFile": TLS_CERT + "/fullchain.pem", "keyFile": TLS_CERT + "/privkey.pem",
                               "ocspStapling": 0, "oneTimeLoading": False, "usage": "encipherment", "buildChain": False}],
-            "alpn": ["h2", "http/1.1"],
+            "alpn": list(TLS_ALPN),
         },
     })
 
@@ -107,8 +110,40 @@ def reality_keys():
     return priv, pub
 
 
-def vless_settings(email):
-    client = {"id": uuid(), "flow": "xtls-rprx-vision", "email": email, "limitIp": 0, "totalGB": 0,
+VISION_FLOW = "xtls-rprx-vision"
+
+
+def stream_network_security(stream):
+    """(network, security) of a serialized streamSettings blob."""
+    s = json.loads(stream)
+    return s.get("network", ""), s.get("security", "")
+
+
+def vision_flow_for(stream):
+    """XTLS Vision flow a VLESS client may declare on this stream, else "".
+
+    Vision needs the transport TLS/Reality is layered on, so it is valid on raw
+    TCP with tls or reality -- and on XHTTP once VLESS-level encryption carries
+    it. Every other transport (WebSocket, HTTPUpgrade, gRPC, mKCP, QUIC, plain
+    HTTP) has no TLS layer under it and cannot express the flow at all.
+
+    Writing flow=xtls-rprx-vision on such an inbound is fatal, not cosmetic:
+    the panel's own link/subscription builders strip the flow for a ws transport
+    (vlessFlowAllowed in internal/sub), so the client never sends it, while the
+    server account still demands it and refuses the connection with
+
+      account <email> is rejected since the client flow is empty
+
+    Mirrors inboundCanEnableTlsFlow() in internal/web/service/inbound_protocol.go.
+    """
+    network, security = stream_network_security(stream)
+    if network == "tcp" and security in ("tls", "reality"):
+        return VISION_FLOW
+    return ""
+
+
+def vless_settings(email, stream):
+    client = {"id": uuid(), "flow": vision_flow_for(stream), "email": email, "limitIp": 0, "totalGB": 0,
               "expiryTime": 0, "enable": True, "tgId": 0, "subId": subid(), "comment": "", "reset": 0}
     return json.dumps({"clients": [client], "decryption": "none", "fallbacks": [], "encryption": ""})
 
@@ -153,18 +188,23 @@ def main():
         print("ui3344 presets: xray x25519 unavailable; Reality inbound will be skipped", file=sys.stderr)
 
     has_cert = os.path.exists(TLS_CERT + "/fullchain.pem") and os.path.exists(TLS_CERT + "/privkey.pem")
+    ws_stream = ws("/ui3344ws")
+    vmess_ws_stream = ws("/ui3344vm")
+    tls_stream = tls_selfsigned() if has_cert else None
+    reality_stream = reality(priv, pub, sid) if (priv and pub) else None
     items = [
-        inbound("VLESS-速度-8443", 8443, "vless", vless_settings("vless-speed"), TCP_NONE),
-        inbound("VLESS-综合-WS-2087", 2087, "vless", vless_settings("vless-ws"), ws("/ui3344ws")),
+        inbound("VLESS-速度-8443", 8443, "vless", vless_settings("vless-speed", TCP_NONE), TCP_NONE),
+        # ws: flow must stay empty -- Vision cannot ride a WebSocket transport.
+        inbound("VLESS-综合-WS-2087", 2087, "vless", vless_settings("vless-ws", ws_stream), ws_stream),
         inbound("VMess-速度-8080", 8080, "vmess", vmess_settings("vmess-speed"), TCP_NONE),
-        *( [inbound("VMess-安全-TLS-2053", 2053, "vmess", vmess_settings("vmess-tls"), tls_selfsigned())] if has_cert else [] ),
-        inbound("VMess-综合-WS-2052", 2052, "vmess", vmess_settings("vmess-ws"), ws("/ui3344vm")),
+        *([inbound("VMess-安全-TLS-2053", 2053, "vmess", vmess_settings("vmess-tls"), tls_stream)] if has_cert else []),
+        inbound("VMess-综合-WS-2052", 2052, "vmess", vmess_settings("vmess-ws"), vmess_ws_stream),
         inbound("SS2022-速度-8388", 8388, "shadowsocks", ss_settings("2022-blake3-aes-128-gcm", 16, "tcp,udp", "ss-speed"), TCP_NONE),
         inbound("SS2022-安全-8389", 8389, "shadowsocks", ss_settings("2022-blake3-aes-256-gcm", 32, "tcp,udp", "ss-secure"), TCP_NONE),
         inbound("SS2022-综合-8390", 8390, "shadowsocks", ss_settings("2022-blake3-aes-256-gcm", 32, "tcp", "ss-balanced"), TCP_NONE),
     ]
-    if priv and pub:
-        items.insert(1, inbound("VLESS-安全-Reality-443", 443, "vless", vless_settings("vless-reality"), reality(priv, pub, sid)))
+    if reality_stream:
+        items.insert(1, inbound("VLESS-安全-Reality-443", 443, "vless", vless_settings("vless-reality", reality_stream), reality_stream))
 
     existing = set()
     try:
