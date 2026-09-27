@@ -6,14 +6,53 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 APP=/usr/local/ui3344
 [ -x "$HERE/ui3344" ] || { echo "未找到 $HERE/ui3344，请在解包目录内运行"; exit 1; }
 
+# 服务一旦停下，之后任何一步失败都必须把它拉回来。
+# 否则一次失败的升级会把面板留在停止状态（真实踩过：xray 子进程持有
+# bin/xray-linux-amd64 导致 cp 报 "Text file busy"，脚本以 set -e 退出，
+# 服务再没被启动，面板直接下线）。
+SERVICE_STOPPED=0
+restore_service_on_error() {
+  rc=$?
+  if [ "$rc" -ne 0 ] && [ "$SERVICE_STOPPED" = "1" ]; then
+    echo "! 安装过程出错(rc=$rc)，正在尝试把服务恢复…" >&2
+    systemctl start ui3344 2>/dev/null || rc-service ui3344 start 2>/dev/null || true
+    systemctl is-active --quiet ui3344 2>/dev/null && echo "! 服务已恢复运行" >&2
+  fi
+}
+trap restore_service_on_error EXIT
+
+# replace_file <源> <目标>：先删再拷。
+# 运行中的进程（残留的 xray、未完全退出的子进程）会持有目标 inode，直接
+# `cp -f` 覆盖必然报 "Text file busy"；而 unlink 总是成功——旧 inode 由持有者
+# 继续用，新文件立刻可用。
+replace_file() {
+  rm -f "$2"
+  cp -f "$1" "$2"
+}
+
 echo "> 停止旧服务(如有)…"
 systemctl stop ui3344 2>/dev/null || rc-service ui3344 stop 2>/dev/null || true
+# 给子进程一点退出时间；仍不退出的（例如手工起的残留 xray）不阻塞升级，
+# 因为下面用的是「先删再拷」。
+for _ in 1 2 3 4 5; do
+  pgrep -f "$APP/bin/xray" >/dev/null 2>&1 || break
+  sleep 1
+done
+SERVICE_STOPPED=1
 
 echo "> 安装文件到 $APP …"
 install -d -m755 "$APP" "$APP/bin" /etc/ui3344 /var/log/ui3344
-cp -f "$HERE/ui3344" "$APP/ui3344"; chmod +x "$APP/ui3344"
-if [ -d "$HERE/bin" ]; then cp -a "$HERE"/bin/. "$APP/bin/"; fi
+replace_file "$HERE/ui3344" "$APP/ui3344"; chmod +x "$APP/ui3344"
+if [ -d "$HERE/bin" ]; then
+  for f in "$HERE"/bin/*; do
+    [ -e "$f" ] || continue
+    replace_file "$f" "$APP/bin/$(basename "$f")"
+  done
+fi
 chmod +x "$APP"/bin/* 2>/dev/null || true
+# 残留进程仍在读旧内核时给出提示（不致命，新文件已就位）
+pgrep -f "$APP/bin/xray" >/dev/null 2>&1 && \
+  echo "! 仍有进程占用 $APP/bin/xray（多为手工启动的残留内核）；新文件已就位，重启服务后即生效"
 # 保留辅助脚本，供安装后离线使用（预设重建 / 订阅配置 / 域名功能）
 for f in create-inbounds.py configure-subscription.py domain-setup.py; do [ -f "$HERE/$f" ] && cp -f "$HERE/$f" "$APP/$f" && chmod +x "$APP/$f"; done
 cp -f "$HERE/ui3344.sh" /usr/bin/ui3344; chmod +x /usr/bin/ui3344
