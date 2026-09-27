@@ -60,6 +60,12 @@ type Result struct {
 	PreferredDomains  []string         `json:"preferredDomains,omitempty"`
 	PreferredRejected []RejectedDomain `json:"preferredRejected,omitempty"`
 	Warnings          []string         `json:"warnings,omitempty"`
+
+	// 面板自身的登录入口。开启域名后面板会搬到 CF 支持的端口（8443），
+	// 否则 `http://<IP>:33441/` 这条老路仍是唯一的登录方式——因为 33441
+	// 不在 Cloudflare 代理的端口列表里，用域名根本登不进来。
+	PanelPort int    `json:"panelPort"`
+	PanelURL  string `json:"panelUrl,omitempty"`
 }
 
 // Manager drives the whole feature. It is stateless; everything it needs lives
@@ -83,6 +89,9 @@ type storedState struct {
 	// 优选域名生成的产物（用于状态展示与「只挂加密端口」的可追溯性）。
 	PreferredDomains       []string `json:"preferredDomains,omitempty"`
 	PreferredRejectedCount int      `json:"preferredRejectedCount,omitempty"`
+
+	// 面板端口搬迁的原值，停用时据此还原。
+	Panel panelPortState `json:"panel,omitempty"`
 }
 
 func (m *Manager) rootDomain() string {
@@ -118,7 +127,20 @@ func (m *Manager) snapshot(st storedState) Result {
 		CFConfigured:     strings.TrimSpace(m.settingService.GetCFApiToken()) != "",
 		PreferredCount:   len(st.PreferredDomains),
 		PreferredDomains: st.PreferredDomains,
+		PanelPort:        m.panelPortForDisplay(st),
+		PanelURL:         panelLoginURL(st.FQDN, m.currentBasePath()),
 	}
+}
+
+// panelPortForDisplay 报告面板当前实际监听的端口（读取设置，读不到就退回常量）。
+func (m *Manager) panelPortForDisplay(st storedState) int {
+	if p, err := m.settingService.GetPort(); err == nil && p > 0 {
+		return p
+	}
+	if st.Panel.Moved {
+		return cfPanelPort
+	}
+	return 0
 }
 
 // Status reports the current state without touching the network.
@@ -143,7 +165,12 @@ func (m *Manager) Preview(subdomain string) Result {
 		"   · 只挂「WS 传输 + 源站 TLS + CF HTTPS 端口(443/2053/2083/2087/2096/8443)」的入站",
 		"   · 候选域名逐个做 DNS + Cloudflare 官方网段校验，失效或已不指向 CF 的会被剔除",
 		"   · 组内 port/path/security 留默认值，表示逐行继承各自入站，因此客户端链接自动正确",
-		"8) 订阅域名设为该子域名；成功后记录状态",
+		"8) 把面板自身搬到端口 " + fmt.Sprint(cfPanelPort) + " 并使用该域名证书：",
+		"   · 面板默认的 33441 不在 Cloudflare 代理的端口列表里，不搬的话开了域名也只能",
+		"     用 http://<IP>:33441/ 登录，域名等于只服务了订阅",
+		"   · 若 8443 已被入站占用（预设的 VLESS-速度-8443），会临时停用它，停用时自动恢复",
+		"   · 面板会重启以在新端口生效，当前页面会断开",
+		"9) 订阅域名设为该子域名；成功后记录状态",
 		"失败任一步：回滚本次已做的改动，保持原状（优选生成失败除外，它只提示不回滚）",
 	}
 	res.Steps = steps
@@ -224,10 +251,21 @@ func (m *Manager) Enable(ctx context.Context, subdomain, totpCode string) (Resul
 
 	// --- local changes ---
 	prevState := m.state()
+
+	// 先把面板搬到 CF 支持的端口：33441 不在 Cloudflare 代理的端口列表里，
+	// 不搬的话「开了域名」只惠及订阅，面板本身仍然只能用 IP:33441 登录。
+	// 失败要连 DNS 记录一起回滚，不能留下半截状态。
+	panelPrev, panelWarn, err := m.movePanelToCFPort(certDir)
+	if err != nil {
+		_ = cf.deleteRecord(ctx, zoneID, recordID)
+		return m.snapshot(prevState), fmt.Errorf("迁移面板端口失败：%w", err)
+	}
+
 	skipped, err := m.applyInbounds(fqdn, certDir)
 	if err != nil {
 		_ = cf.deleteRecord(ctx, zoneID, recordID)
 		_ = m.restoreInbounds()
+		m.restorePanelPort(panelPrev)
 		return m.snapshot(prevState), fmt.Errorf("切换入站失败：%w", err)
 	}
 	_ = m.settingService.SetDomainFqdn(fqdn)
@@ -236,7 +274,8 @@ func (m *Manager) Enable(ctx context.Context, subdomain, totpCode string) (Resul
 	//
 	// 这一步是**尽力而为**的：优选域名依赖外部 DNS，任何一个环节失败都不应该
 	// 让已经成功的域名功能回滚。失败只作为警告返回给操作者。
-	warnings := append([]string{}, skipped...)
+	warnings := append([]string{}, panelWarn...)
+	warnings = append(warnings, skipped...)
 	prefDomains, prefRejected, prefWarn, prefErr := SyncPreferredHosts(ctx, fqdn, PreferredDomainCandidates)
 	warnings = append(warnings, prefWarn...)
 	if prefErr != nil {
@@ -252,14 +291,27 @@ func (m *Manager) Enable(ctx context.Context, subdomain, totpCode string) (Resul
 		CertMode: certMode, CertPath: certDir, Proxied: true,
 		PreferredDomains:       prefDomains,
 		PreferredRejectedCount: len(prefRejected),
+		Panel:                  panelPrev,
 	}
 	if err := m.saveState(st); err != nil {
+		m.restorePanelPort(panelPrev)
 		return m.snapshot(prevState), err
 	}
 	_ = m.settingService.SetDomainEnabled(true)
+
+	// 面板端口的改动要重启进程才生效，放在最后：先让本次 HTTP 响应写出去，
+	// 否则用户在切换瞬间拿到的是断掉的响应。延迟 3 秒。
+	if panelPrev.Moved {
+		restartPanelSoon()
+	}
+
 	res := m.snapshot(st)
 	res.Warnings = warnings
 	res.PreferredRejected = prefRejected
+	if u := panelLoginURL(fqdn, m.currentBasePath()); u != "" {
+		res.PanelURL = u
+		res.Warnings = append(res.Warnings, "面板新登录地址："+u)
+	}
 	return res, nil
 }
 
@@ -280,11 +332,22 @@ func (m *Manager) Disable(ctx context.Context, totpCode string) (Result, error) 
 	_ = m.restoreInbounds()
 	// 优选组是本功能生成的，停用时一并清掉，避免订阅里留下指向失效域名的节点。
 	_ = RemovePreferredHosts()
+	// 面板端口/证书还原回启用前的值，并为「腾端口」而临时停用的入站恢复启用。
+	// 顺序放在清状态之前——restorePanelPort 需要读 st.Panel。
+	m.restorePanelPort(st.Panel)
+	if st.Panel.Moved {
+		restartPanelSoon()
+	}
 	_ = m.settingService.SetDomainFqdn("")
 	_ = m.settingService.SetDomainEnabled(false)
 	clear := storedState{Enabled: false}
 	_ = m.saveState(clear)
-	return m.Status(), nil
+	res := m.Status()
+	if st.Panel.Moved && st.Panel.PrevPort > 0 {
+		res.Warnings = append(res.Warnings, fmt.Sprintf(
+			"面板端口已还原为 %d；面板将重启，请改用原地址登录", st.Panel.PrevPort))
+	}
+	return res, nil
 }
 
 //
