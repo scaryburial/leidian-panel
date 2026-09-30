@@ -187,15 +187,19 @@ export default function PanelUpdateModal({
           <Button
             type="primary"
             disabled={!info.updateAvailable}
-            onClick={() =>
-              info.releaseUrl
-                ? window.open(info.releaseUrl, '_blank', 'noopener,noreferrer')
-                : updatePanel()
-            }
+            onClick={updatePanel}
             icon={<CloudDownloadOutlined />}
           >
-            {info.releaseUrl ? t('pages.index.downloadUpdate') : t('pages.index.updatePanel')}
+            {t('pages.index.updatePanel')}
           </Button>
+          {info.releaseUrl && (
+            <Button
+              type="link"
+              onClick={() => window.open(info.releaseUrl, '_blank', 'noopener,noreferrer')}
+            >
+              {t('pages.index.downloadUpdate')}
+            </Button>
+          )}
         </div>
       </Modal>
     </>

@@ -3,15 +3,18 @@
 // clean three-part numeric tag, fall back to a normalized string inequality —
 // the same heuristic the Go side uses so the node "update available" badge
 // agrees with what the server would decide.
-function parseVersionParts(version: string): [number, number, number] | null {
-  const parts = version.trim().replace(/^v/, '').split('.');
-  if (parts.length !== 3) return null;
+// 解析形如 "v1"、"1.6"、"1.7.0" 的版本号。历史发布标签是两段式的
+// （v1.6），这里不再强制三段式，缺位在比较时按 0 处理。
+function parseVersionParts(version: string): number[] | null {
+  const normalized = version.trim().replace(/^v/i, '');
+  if (!normalized) return null;
+  const parts = normalized.split('.');
   const out: number[] = [];
   for (const part of parts) {
     if (!/^\d+$/.test(part)) return null;
     out.push(Number(part));
   }
-  return [out[0], out[1], out[2]];
+  return out;
 }
 
 // Format a panel version for display. Dev builds report a "dev+<commit>"
@@ -33,9 +36,12 @@ export function isPanelUpdateAvailable(latest: string, current: string): boolean
   if (!a || !b) {
     return latest.trim().replace(/^v/, '') !== current.trim().replace(/^v/, '');
   }
-  for (let i = 0; i < 3; i++) {
-    if (a[i] > b[i]) return true;
-    if (a[i] < b[i]) return false;
+  const n = Math.max(a.length, b.length);
+  for (let i = 0; i < n; i++) {
+    const av = a[i] ?? 0;
+    const bv = b[i] ?? 0;
+    if (av > bv) return true;
+    if (av < bv) return false;
   }
   return false;
 }

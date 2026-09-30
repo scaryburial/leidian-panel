@@ -93,7 +93,10 @@ func IsDevBuild() bool {
 // as up to date instead of always showing "update available".
 func GetPanelVersion() string {
 	if !IsDevBuild() {
-		return GetBaseVersion()
+		// 雷电面板：界面/节点上报显示的应是本 fork 自己的发布版本(ui3344 tag，
+		// 例如 v1.7)，而不是上游 3x-ui 的版本号(3.7.0)。
+		// GetUIVersion 在构建时没有注入 uiVersion 时会自动回退到 GetBaseVersion。
+		return GetUIVersion()
 	}
 	commit := GetBuildCommit()
 	if len(commit) > 8 {

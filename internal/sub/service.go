@@ -1618,10 +1618,68 @@ func (s *SubService) resolveInboundAddress(inbound *model.Inbound) string {
 			return c
 		}
 	}
+	// 雷电面板修复：域名功能只把「WS + TLS」入站切到 CF 域名
+	// （见 domain.rewriteWSInbound / applyInbounds），因为 Cloudflare
+	// 只代理 HTTP(S)/WS，代理不了 Reality / VMess-TCP / Shadowsocks。
+	// 此前这里对**所有**入站都返回配置的公共域名，导致开启域名功能后
+	// 订阅里 6 个非 WS 节点的地址全被改写成域名，客户端导入后连不上。
+	// 现在只有真正绑定该域名的入站才广播域名，其余回退到启用域名时记录
+	// 的服务器公网 IP。
 	if d := s.configuredPublicHost(); d != "" {
+		if inboundBoundToDomain(inbound, d) {
+			return d
+		}
+		if ip := s.domainServerIP(); ip != "" {
+			return ip
+		}
 		return d
 	}
 	return s.address
+}
+
+// inboundBoundToDomain 判断某个入站是否已被域名功能切到指定域名上运行：
+// 传输为 ws、安全为 tls，且 TLS serverName 等于该域名。
+func inboundBoundToDomain(inbound *model.Inbound, fqdn string) bool {
+	if inbound == nil || strings.TrimSpace(fqdn) == "" {
+		return false
+	}
+	var stream map[string]any
+	if err := json.Unmarshal([]byte(inbound.StreamSettings), &stream); err != nil {
+		return false
+	}
+	if network, _ := stream["network"].(string); !strings.EqualFold(network, "ws") {
+		return false
+	}
+	if security, _ := stream["security"].(string); !strings.EqualFold(security, "tls") {
+		return false
+	}
+	tls, _ := stream["tlsSettings"].(map[string]any)
+	if tls == nil {
+		return false
+	}
+	name, _ := tls["serverName"].(string)
+	if strings.TrimSpace(name) == "" {
+		if inner, ok := tls["settings"].(map[string]any); ok {
+			name, _ = inner["serverName"].(string)
+		}
+	}
+	return strings.EqualFold(strings.TrimSpace(name), strings.TrimSpace(fqdn))
+}
+
+// domainServerIP 返回启用域名时记录的服务器公网 IP，让非域名入站继续
+// 对外广播一个可直连的地址；读不到时返回空字符串。
+func (s *SubService) domainServerIP() string {
+	raw, err := s.settingService.GetDomainConfig()
+	if err != nil || strings.TrimSpace(raw) == "" {
+		return ""
+	}
+	var cfg struct {
+		IP string `json:"ip"`
+	}
+	if err := json.Unmarshal([]byte(raw), &cfg); err != nil {
+		return ""
+	}
+	return strings.TrimSpace(cfg.IP)
 }
 
 func findClientIndex(clients []model.Client, email string) int {

@@ -141,6 +141,17 @@ export default function OverviewActionBar({
         onClick: onOpenXrayMetrics,
       },
     ],
+    // 雷电面板新增：首页操作栏最右侧的「更新面板」入口。
+    // 检测到新版本时用主色高亮，点击打开更新弹窗（内含一键自动更新）。
+    [
+      {
+        key: 'panelUpdate',
+        icon: <CloudDownloadOutlined />,
+        text: t('pages.index.updatePanel'),
+        onClick: onOpenPanelUpdate,
+        primary: updateAvailable,
+      },
+    ],
   ];
 
   const statePill = (

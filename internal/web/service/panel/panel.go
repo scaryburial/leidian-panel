@@ -199,14 +199,17 @@ func getDevUpdateInfo() (*PanelUpdateInfo, error) {
 // setting. Returns the run ID to pass to GetUpdateStatus so the caller can
 // tell this run's result apart from a stale one.
 func (s *PanelService) StartUpdate() (int64, error) {
-	return 0, fmt.Errorf("panel self-update is disabled")
+	// 重新启用：走本仓库的 update.sh，下载最新发布包并就地重装。
+	// 该脚本 URL 已指向 scaryburial/leidian-panel，不再执行上游代码。
+	return s.startUpdate(devChannelActive())
 }
 
 // StartUpdateChannel runs the updater against an explicitly chosen channel,
 // overriding the local dev-channel setting. Used by the master node updater so
 // a node can be moved to the dev channel from the central panel.
 func (s *PanelService) StartUpdateChannel(dev bool) (int64, error) {
-	return 0, fmt.Errorf("panel self-update is disabled")
+	// 重新启用：按调用方指定的通道(稳定/开发)执行自更新。
+	return s.startUpdate(dev)
 }
 
 // GetUpdateStatus reports the outcome of the most recently launched panel
@@ -561,31 +564,43 @@ func compareVersionStrings(a string, b string) (int, bool) {
 	if !okA || !okB {
 		return 0, false
 	}
-	for i := range len(aParts) {
-		if aParts[i] > bParts[i] {
+	// 段数可以不同（"1.6" 对 "1.7.0"），缺位按 0 处理。
+	for i := range max(len(aParts), len(bParts)) {
+		av, bv := 0, 0
+		if i < len(aParts) {
+			av = aParts[i]
+		}
+		if i < len(bParts) {
+			bv = bParts[i]
+		}
+		if av > bv {
 			return 1, true
 		}
-		if aParts[i] < bParts[i] {
+		if av < bv {
 			return -1, true
 		}
 	}
 	return 0, true
 }
 
-func parseVersionParts(version string) ([3]int, bool) {
-	var result [3]int
-	parts := strings.Split(normalizeVersionTag(version), ".")
-	if len(parts) != 3 {
-		return result, false
+// parseVersionParts 解析形如 "v1"、"1.6"、"1.7.0" 的版本号。
+// 历史发布标签是两段式的（v1.6），旧实现只认三段式，解析失败后
+// isNewerVersion 退化成字符串比对，于是面板永远提示「有可用更新」。
+func parseVersionParts(version string) ([]int, bool) {
+	normalized := normalizeVersionTag(version)
+	if normalized == "" {
+		return nil, false
 	}
-	for i, part := range parts {
+	parts := strings.Split(normalized, ".")
+	out := make([]int, 0, len(parts))
+	for _, part := range parts {
 		n, err := strconv.Atoi(part)
 		if err != nil {
-			return result, false
+			return nil, false
 		}
-		result[i] = n
+		out = append(out, n)
 	}
-	return result, true
+	return out, true
 }
 
 func normalizeVersionTag(version string) string {
