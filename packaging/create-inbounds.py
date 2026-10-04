@@ -260,6 +260,83 @@ def repair_prohibited_vless(csrf):
     return fixed
 
 
+def repair_shadowsocks_method_mix(csrf):
+    """把 PSK 长度不一致的 Shadowsocks-2022 入站统一成 aes-256-gcm。
+
+    `clients` 表里**一个客户端只有一个 password 字段**，而 SS2022 的 PSK 长度由
+    method 决定（aes-128 = 16 字节，aes-256/chacha20 = 32 字节）。只要三条 SS 入站的
+    method 长度不一致，把同一个客户端挂到多条入站上就必然有一边不匹配——
+    轻则该节点连不上，重则配置非法、xray 以 `proxy/shadowsocks_2022: bad key`
+    拒绝启动，**整台服务器所有节点一起下线**。
+
+    这里在安装/升级时做一次统一：method 改为 aes-256-gcm，服务器 PSK 与各客户端 PSK
+    重新生成为 32 字节（同一 email 在所有入站里用同一个密钥）。改密钥意味着已导入的
+    客户端需要重新拉一次订阅，但总好过节点不可用或整机下线。
+    """
+    try:
+        lst = json.loads(get("/panel/api/inbounds/list")).get("obj") or []
+    except Exception as e:  # noqa: BLE001
+        print("ui3344 presets: ss 修复列表读取失败 %s" % e, file=sys.stderr)
+        return 0
+
+    ss = [ib for ib in lst if (ib.get("protocol") or "").lower() == "shadowsocks"]
+    if len(ss) < 2:
+        return 0
+
+    want = "2022-blake3-aes-256-gcm"
+    lens = set()
+    for ib in ss:
+        raw = ib.get("streamSettings")
+        settings = ib.get("settings")
+        if isinstance(settings, str):
+            try:
+                settings = json.loads(settings)
+            except Exception:  # noqa: BLE001
+                continue
+        m = (settings or {}).get("method") or ""
+        lens.add(SS_KEY_BYTES.get(m, 0))
+    if len(lens) <= 1:
+        return 0  # 长度已经一致，不需要动
+
+    # 同一个 email 用同一个新密钥，这样一个客户端可以通吃所有 SS 入站
+    keys = {}
+    fixed = 0
+    for ib in ss:
+        settings = ib.get("settings")
+        if isinstance(settings, str):
+            try:
+                settings = json.loads(settings)
+            except Exception:  # noqa: BLE001
+                continue
+        settings = settings or {}
+        settings["method"] = want
+        settings["password"] = b64(32)
+        for cl in (settings.get("clients") or []):
+            email = cl.get("email")
+            if email not in keys:
+                keys[email] = b64(32)
+            cl["password"] = keys[email]
+            cl.pop("method", None)
+        ib["settings"] = json.dumps(settings, ensure_ascii=False)
+        try:
+            r = json.loads(post_json("/panel/api/inbounds/update/%d" % ib["id"], ib, csrf))
+            if r.get("success"):
+                fixed += 1
+                print("ui3344 presets: ss 统一 %s (端口 %s) -> %s" % (ib.get("remark"), ib.get("port"), want))
+            else:
+                print("ui3344 presets: ss 统一 %s -> %s" % (ib.get("remark"), r.get("msg")), file=sys.stderr)
+        except Exception as e:  # noqa: BLE001
+            print("ui3344 presets: ss 统一 %s ERROR %s" % (ib.get("remark"), e), file=sys.stderr)
+    return fixed
+
+
+SS_KEY_BYTES = {
+    "2022-blake3-aes-128-gcm": 16,
+    "2022-blake3-aes-256-gcm": 32,
+    "2022-blake3-chacha20-poly1305": 32,
+}
+
+
 def main():
     detect_base()
     token = re.search(r"[A-Za-z0-9_\-]{40,}", get("/csrf-token"))
@@ -313,7 +390,16 @@ def main():
         inbound("VMess-速度-8080", 8080, "vmess", vmess_settings("vmess-speed"), TCP_NONE),
         *([inbound("VMess-安全-TLS-2053", 2053, "vmess", vmess_settings("vmess-tls"), tls_stream)] if has_cert else []),
         inbound("VMess-综合-WS-2052", 2052, "vmess", vmess_settings("vmess-ws"), vmess_ws_stream),
-        inbound("SS2022-速度-8388", 8388, "shadowsocks", ss_settings("2022-blake3-aes-128-gcm", 16, "tcp,udp", "ss-speed"), TCP_NONE),
+        # 速度档也用 aes-256-gcm，不再是 aes-128。
+        #
+        # SS2022 的 PSK 长度由 method 决定（aes-128 要 16 字节、aes-256 要 32 字节），
+        # 而 clients 表里**一个客户端只有一个 password 字段**。只要三条入站的
+        # method 长度不一致，同一个客户端就必然有一边挂不上：轻则该节点连不上，
+        # 重则生成的配置非法、xray 直接拒绝启动（proxy/shadowsocks_2022: bad key），
+        # **整台服务器所有节点一起下线**。
+        # 三条统一成 aes-256 后，一个客户端就能同时用于三条入站。aes-256-gcm 的性能
+        # 损失很小，换来的是整类故障消失。
+        inbound("SS2022-速度-8388", 8388, "shadowsocks", ss_settings("2022-blake3-aes-256-gcm", 32, "tcp,udp", "ss-speed"), TCP_NONE),
         inbound("SS2022-安全-8389", 8389, "shadowsocks", ss_settings("2022-blake3-aes-256-gcm", 32, "tcp,udp", "ss-secure"), TCP_NONE),
         inbound("SS2022-综合-8390", 8390, "shadowsocks", ss_settings("2022-blake3-aes-256-gcm", 32, "tcp", "ss-balanced"), TCP_NONE),
     ]
@@ -349,6 +435,11 @@ def main():
     repaired = repair_prohibited_vless(token)
     if repaired:
         print("ui3344 presets: repaired=%d (VLESS 裸 TCP -> Reality)" % repaired)
+
+    # 老版本可能造出 PSK 长度不一致的三条 SS2022 入站，统一成 aes-256-gcm。
+    unified = repair_shadowsocks_method_mix(token)
+    if unified:
+        print("ui3344 presets: ss 已统一 %d 条入站为 %s" % (unified, "2022-blake3-aes-256-gcm"))
     return 0
 
 
