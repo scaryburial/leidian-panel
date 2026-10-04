@@ -477,6 +477,27 @@ func validShadowsocksClientKey(method, key string) bool {
 	return len(decoded) == n
 }
 
+// settingsClientPassword 取入站 settings 里某个 email 的客户端密钥。
+//
+// 用途：clients 表一个客户端只有一个 password，把它同时挂到 aes-128 与 aes-256
+// 两条 Shadowsocks-2022 入站上时，config 生成阶段必须挑一个长度正确的密钥，而
+// 入站 settings 里的那个正是订阅已经下发的——优先沿用它，客户端才不会失联。
+func settingsClientPassword(settings map[string]any, email string) string {
+	clients, _ := settings["clients"].([]any)
+	want := strings.TrimSpace(email)
+	for _, raw := range clients {
+		c, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+		if e, _ := c["email"].(string); strings.EqualFold(strings.TrimSpace(e), want) {
+			pw, _ := c["password"].(string)
+			return pw
+		}
+	}
+	return ""
+}
+
 func shadowsocksKeyBytes(method string) int {
 	switch method {
 	case "2022-blake3-aes-128-gcm":

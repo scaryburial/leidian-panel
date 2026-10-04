@@ -252,8 +252,28 @@ func (s *XrayService) GetXrayConfig() (*xray.Config, error) {
 					entry["flow"] = flow
 				}
 			case model.Shadowsocks:
-				if c.Password != "" {
-					entry["password"] = c.Password
+				// Xray 会按 method 校验 PSK 长度，长度不对时**直接拒绝启动**：
+				//   Failed to start: main: failed to create server >
+				//   proxy/shadowsocks_2022: create service > bad key
+				// 后果不是「这一条入站不可用」，而是**整台服务器的所有节点一起下线**。
+				//
+				// clients 表里一个客户端只有一个 password 字段，而同一个客户端完全
+				// 可能被同时挂到 aes-128（16 字节）与 aes-256（32 字节）两条入站上
+				// ——总有一边长度不匹配。这里按优先级取密钥：入站 settings 里已有的
+				// （订阅下发的就是它，改它会让已导入的客户端失联）> 重新生成。
+				// 无论如何都不把非法配置交给 xray。
+				ssMethod, _ := settings["method"].(string)
+				pw := c.Password
+				if !validShadowsocksClientKey(ssMethod, pw) {
+					pw = settingsClientPassword(settings, c.Email)
+					if !validShadowsocksClientKey(ssMethod, pw) {
+						pw = randomShadowsocksClientKey(ssMethod)
+					}
+					logger.Warningf("Inbound %q (port %d): client %q 的 PSK 长度与 method %q 不符，已改用可用密钥；否则 xray 会因 bad key 拒绝启动，全部节点下线",
+						inbound.Tag, inbound.Port, c.Email, ssMethod)
+				}
+				if pw != "" {
+					entry["password"] = pw
 				}
 			case model.Hysteria:
 				if c.Auth != "" {

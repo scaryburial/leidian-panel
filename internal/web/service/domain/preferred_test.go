@@ -69,6 +69,19 @@ func stubLookup(t *testing.T, table map[string][]string) {
 	t.Cleanup(func() { lookupIPv4 = prev })
 }
 
+// stubProbe 替换端到端探测，让测试不依赖网络。accept 为 nil 时全部通过。
+func stubProbe(t *testing.T, accept func(host string) bool) {
+	t.Helper()
+	prev := probePreferred
+	probePreferred = func(_ context.Context, host, _ string, _ int, _ string) (bool, string) {
+		if accept == nil || accept(host) {
+			return true, ""
+		}
+		return false, "stubbed rejection"
+	}
+	t.Cleanup(func() { probePreferred = prev })
+}
+
 // TestCFPortClassification 锁定 Cloudflare 的两类端口。
 //
 // 这个分类是整个「优选只挂加密端口」功能的地基：分错了就会把 TLS 入站挂到
@@ -238,12 +251,15 @@ func TestSyncPreferredHosts_RealWriteAndIdempotent(t *testing.T) {
 		"a.test": {"104.16.0.1"},
 		"b.test": {"8.8.8.8"}, // 非 CF，应被剔除
 	})
+	// 端到端探测在测试里打桩：真实网络不该进单元测试。
+	stubProbe(t, nil)
 
 	ctx := context.Background()
 	domains, rejected, warnings, err := SyncPreferredHosts(ctx, "d.example.com", []string{"a.test", "b.test"})
 	if err != nil {
 		t.Fatalf("SyncPreferredHosts: %v", err)
 	}
+	// 返回值只含第三方优选域名（不含自有域名，自有域名只进 Hosts）
 	if len(domains) != 1 || domains[0] != "a.test" {
 		t.Fatalf("domains = %v, want [a.test]", domains)
 	}
@@ -264,10 +280,12 @@ func TestSyncPreferredHosts_RealWriteAndIdempotent(t *testing.T) {
 	}
 
 	hs := rows()
-	// 1 个域名 × 2 个加密入站 = 2 行
-	if len(hs) != 2 {
-		t.Fatalf("hosts 行数 = %d, want 2 (%+v)", len(hs), hs)
+	// 2 个域名（自有域名 d.example.com + 通过探测的 a.test）× 2 个加密入站 = 4 行。
+	// 自有域名必须带上：它是唯一被实测证明可用的地址，第三方优选域名随时可能失效。
+	if len(hs) != 4 {
+		t.Fatalf("hosts 行数 = %d, want 4 (%+v)", len(hs), hs)
 	}
+	seenAddr := map[string]bool{}
 	for _, h := range hs {
 		if h.InboundId == plain.Id {
 			t.Fatalf("明文端口 %d 的入站被错误地挂上了优选域名", plain.Port)
@@ -275,9 +293,10 @@ func TestSyncPreferredHosts_RealWriteAndIdempotent(t *testing.T) {
 		if h.InboundId != ib87.Id && h.InboundId != ib83.Id {
 			t.Fatalf("出现了预期外的入站 %d", h.InboundId)
 		}
-		if h.Address != "a.test" {
-			t.Errorf("address = %q, want a.test", h.Address)
+		if h.Address != "a.test" && h.Address != "d.example.com" {
+			t.Errorf("address = %q, want a.test 或 d.example.com", h.Address)
 		}
+		seenAddr[h.Address] = true
 		// 这三项必须保持「继承各自入站」的语义，否则订阅里的端口/路径/加密模式会错。
 		if h.Port != 0 {
 			t.Errorf("port = %d, want 0（0 = 继承入站端口）", h.Port)
@@ -292,22 +311,25 @@ func TestSyncPreferredHosts_RealWriteAndIdempotent(t *testing.T) {
 			t.Errorf("sni/hostHeader = %q/%q, want d.example.com", h.Sni, h.HostHeader)
 		}
 	}
+	if !seenAddr["a.test"] || !seenAddr["d.example.com"] {
+		t.Errorf("自有域名与优选域名都应写进优选组，实际 address 集合 = %v", seenAddr)
+	}
 
 	// 幂等：再跑一次不应堆积
 	if _, _, _, err := SyncPreferredHosts(ctx, "d.example.com", []string{"a.test", "b.test"}); err != nil {
 		t.Fatalf("第二次 SyncPreferredHosts: %v", err)
 	}
-	if n := len(rows()); n != 2 {
-		t.Fatalf("重复调用后 hosts 行数 = %d, want 2（应幂等）", n)
+	if n := len(rows()); n != 4 {
+		t.Fatalf("重复调用后 hosts 行数 = %d, want 4（应幂等）", n)
 	}
 
-	// 状态查询
+	// 状态查询（会带上自有域名，因为它是优选组里的一行）
 	statusDomains, statusInbounds, err := PreferredStatus()
 	if err != nil {
 		t.Fatalf("PreferredStatus: %v", err)
 	}
-	if len(statusDomains) != 1 || statusDomains[0] != "a.test" {
-		t.Errorf("status domains = %v, want [a.test]", statusDomains)
+	if len(statusDomains) != 2 || statusDomains[0] != "a.test" || statusDomains[1] != "d.example.com" {
+		t.Errorf("status domains = %v, want [a.test d.example.com]", statusDomains)
 	}
 	if len(statusInbounds) != 2 {
 		t.Errorf("status inbounds = %v, want 2 个", statusInbounds)

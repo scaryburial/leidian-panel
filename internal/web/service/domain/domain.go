@@ -32,6 +32,8 @@ import (
 	"github.com/mhsanaei/3x-ui/v3/internal/database/model"
 	"github.com/mhsanaei/3x-ui/v3/internal/util/totp"
 	"github.com/mhsanaei/3x-ui/v3/internal/web/service"
+
+	"gorm.io/gorm"
 )
 
 const (
@@ -41,6 +43,18 @@ const (
 	// ws inbounds the domain feature rewrites to WS+TLS on the subdomain.
 	wsVLESSRemark = "VLESS-综合-WS-2087"
 	wsVMessRemark = "VMess-综合-WS-2052"
+
+	// vmessTLSRemark is the VMess/TCP/TLS preset. It ships with a self-signed
+	// certificate (CN=ui3344, and **no SAN at all**), so out of the box every
+	// client fails the handshake unless it is told to skip verification — and
+	// the generated share link does not say that. Once a domain exists we can
+	// simply hand this inbound the real certificate instead.
+	vmessTLSRemark = "VMess-安全-TLS-2053"
+
+	// selfSignedCertDir is where the installer puts the fallback certificate,
+	// and what the VMess/TLS preset is restored to when the domain is disabled.
+	selfSignedCertDir = certRoot + "/ui3344-selfsigned"
+	selfSignedSNI     = "ui3344"
 )
 
 // Result is the panel-facing snapshot of the domain feature.
@@ -281,10 +295,8 @@ func (m *Manager) Enable(ctx context.Context, subdomain, totpCode string) (Resul
 	if prefErr != nil {
 		warnings = append(warnings, "优选域名生成失败："+prefErr.Error())
 	}
-	if n := len(prefRejected); n > 0 {
-		warnings = append(warnings, fmt.Sprintf(
-			"已剔除 %d 个未通过 Cloudflare 网段校验的候选域名（失效或已不指向 CF）", n))
-	}
+	// 被剔除的候选域名（网段校验失败 + 端到端探测失败）连同原因在
+	// res.PreferredRejected 里返回，这里不再重复汇总一句笼统的提示。
 
 	st := storedState{
 		Enabled: true, FQDN: fqdn, IP: ip, RecordID: recordID,
@@ -371,7 +383,9 @@ func (m *Manager) applyInbounds(fqdn, certDir string) (skipped []string, err err
 	for _, remark := range []string{wsVLESSRemark, wsVMessRemark} {
 		port, err := inboundPortByRemark(remark)
 		if err != nil {
-			return skipped, err
+			// 预设入站可能被用户删掉了；这是可接受的，不要因此让整个 Enable 失败。
+			skipped = append(skipped, fmt.Sprintf("%s 不存在，已跳过", remark))
+			continue
 		}
 		if IsCFHTTPOnlyPort(port) {
 			skipped = append(skipped, fmt.Sprintf(
@@ -383,23 +397,100 @@ func (m *Manager) applyInbounds(fqdn, certDir string) (skipped []string, err err
 			return skipped, err
 		}
 	}
+
+	// VMess/TCP/TLS 没有域名也能跑，但它的自签证书 CN=ui3344 且没有任何 SAN，
+	// 客户端必须手动勾「跳过证书校验」才能连上（分享链接里并没有这个开关）。
+	// 既然现在有了覆盖本域名的正规证书，就把它换掉。
+	if err := rewriteTLSCertificate(vmessTLSRemark, fqdn, certDir); err != nil {
+		if errors.Is(err, errInboundNotFound) {
+			skipped = append(skipped, fmt.Sprintf("%s 不存在，已跳过证书替换", vmessTLSRemark))
+		} else {
+			skipped = append(skipped, fmt.Sprintf("%s 证书替换失败：%v", vmessTLSRemark, err))
+		}
+	} else {
+		skipped = append(skipped, fmt.Sprintf(
+			"%s 的 TLS 证书已替换为域名证书（原来是无 SAN 的自签证书，客户端必然握手失败）",
+			vmessTLSRemark))
+	}
+
 	m.restartXray()
 	return skipped, nil
 }
 
+// errInboundNotFound 表示按 remark 找不到入站；调用方可以据此降级为「跳过」。
+var errInboundNotFound = errors.New("入站不存在")
+
 // inboundPortByRemark 查出入站的监听端口。
+//
+// 只把 gorm.ErrRecordNotFound 当成「入站不存在」；其他 DB 错误原样带原因返回，
+// 否则真实的数据库故障会被报成「不存在，已跳过」，Enable 还会继续落盘状态。
 func inboundPortByRemark(remark string) (int, error) {
 	var ib model.Inbound
 	if err := database.GetDB().Where("remark = ?", remark).First(&ib).Error; err != nil {
-		return 0, fmt.Errorf("找不到入站 %s", remark)
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return 0, fmt.Errorf("%w: %s", errInboundNotFound, remark)
+		}
+		return 0, fmt.Errorf("查询入站 %s 失败：%w", remark, err)
 	}
 	return ib.Port, nil
+}
+
+// rewriteTLSCertificate points a plain (non-WebSocket) TLS inbound at the given
+// certificate directory, or back at the bundled self-signed certificate when
+// fqdn is empty. Only the TLS certificate block is touched — the transport and
+// the client list are left exactly as they are.
+func rewriteTLSCertificate(remark, fqdn, certDir string) error {
+	db := database.GetDB()
+	var ib model.Inbound
+	if err := db.Where("remark = ?", remark).First(&ib).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return fmt.Errorf("%w: %s", errInboundNotFound, remark)
+		}
+		return fmt.Errorf("查询入站 %s 失败：%w", remark, err)
+	}
+	var stream map[string]any
+	if err := json.Unmarshal([]byte(ib.StreamSettings), &stream); err != nil {
+		return err
+	}
+
+	sni := selfSignedSNI
+	dir := selfSignedCertDir
+	if fqdn != "" {
+		sni = fqdn
+		dir = certDir
+	}
+
+	tlsSettings, _ := stream["tlsSettings"].(map[string]any)
+	if tlsSettings == nil {
+		// 这不是 TLS 入站（用户改过），不要凭空给它加 TLS。
+		return fmt.Errorf("入站 %s 当前不是 TLS 传输，未做改动", remark)
+	}
+	tlsSettings["serverName"] = sni
+	tlsSettings["certificates"] = []any{map[string]any{
+		"certificateFile": filepath.Join(dir, "fullchain.pem"),
+		"keyFile":         filepath.Join(dir, "privkey.pem"),
+		"ocspStapling":    0, "oneTimeLoading": false, "usage": "encipherment", "buildChain": false,
+	}}
+	stream["tlsSettings"] = tlsSettings
+
+	out, err := json.Marshal(stream)
+	if err != nil {
+		return err
+	}
+	return db.Model(&model.Inbound{}).Where("id = ?", ib.Id).Update("stream_settings", string(out)).Error
 }
 
 func (m *Manager) restoreInbounds() error {
 	var errs []string
 	for _, remark := range []string{wsVLESSRemark, wsVMessRemark} {
 		if err := rewriteWSInbound(remark, "", ""); err != nil {
+			if !errors.Is(err, errInboundNotFound) {
+				errs = append(errs, err.Error())
+			}
+		}
+	}
+	if err := rewriteTLSCertificate(vmessTLSRemark, "", ""); err != nil {
+		if !errors.Is(err, errInboundNotFound) {
 			errs = append(errs, err.Error())
 		}
 	}
@@ -423,7 +514,10 @@ func rewriteWSInbound(remark, fqdn, certDir string) error {
 	db := database.GetDB()
 	var ib model.Inbound
 	if err := db.Where("remark = ?", remark).First(&ib).Error; err != nil {
-		return fmt.Errorf("找不到入站 %s", remark)
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return fmt.Errorf("%w: %s", errInboundNotFound, remark)
+		}
+		return fmt.Errorf("查询入站 %s 失败：%w", remark, err)
 	}
 	var stream map[string]any
 	if err := json.Unmarshal([]byte(ib.StreamSettings), &stream); err != nil {

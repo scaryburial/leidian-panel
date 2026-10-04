@@ -5,6 +5,7 @@ package sub
 import (
 	"context"
 	"crypto/tls"
+	"encoding/json"
 	"io"
 	"io/fs"
 	"net"
@@ -45,6 +46,28 @@ func NewServer() *Server {
 	}
 }
 
+// subAllowedHosts returns every host name the subscription server should answer
+// for: the configured domain plus the server IP that the domain feature recorded
+// when it was enabled (domainConfig.ip). The IP is what the panel used as the
+// node address for every non-WS inbound, so it must stay reachable.
+func subAllowedHosts(subDomain string, settings service.SettingService) []string {
+	hosts := []string{subDomain}
+	raw, err := settings.GetDomainConfig()
+	if err != nil || strings.TrimSpace(raw) == "" {
+		return hosts
+	}
+	var st struct {
+		IP string `json:"ip"`
+	}
+	if err := json.Unmarshal([]byte(raw), &st); err != nil {
+		return hosts
+	}
+	if ip := strings.TrimSpace(st.IP); ip != "" {
+		hosts = append(hosts, ip)
+	}
+	return hosts
+}
+
 // initRouter configures the subscription server's Gin engine, middleware,
 // templates and static assets and returns the ready-to-use engine.
 func (s *Server) initRouter() (*gin.Engine, error) {
@@ -61,7 +84,11 @@ func (s *Server) initRouter() (*gin.Engine, error) {
 	}
 
 	if subDomain != "" {
-		engine.Use(middleware.DomainValidatorMiddleware(subDomain))
+		// Accept the domain *and* the server IP recorded by the domain feature.
+		// Subscription URLs handed out before the domain existed use the IP, and
+		// those links are already stored in clients (and in the Android app), so
+		// validating the domain alone turned every one of them into a 403.
+		engine.Use(middleware.DomainValidatorMiddleware(subAllowedHosts(subDomain, s.settingService)...))
 	}
 
 	LinksPath, err := s.settingService.GetSubPath()

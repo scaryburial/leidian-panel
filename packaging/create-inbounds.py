@@ -19,19 +19,53 @@ import json
 import os
 import random
 import re
+import ssl
 import subprocess
 import sys
 import urllib.parse
 import urllib.request
 
-BASE = os.environ.get("UI3344_URL", "http://127.0.0.1:33441/ui3344").rstrip("/")
 USER = os.environ.get("UI3344_USER", "3344")
 PASS = os.environ.get("UI3344_PASS", "3344")
 XRAY = os.environ.get("UI3344_XRAY", "/usr/local/ui3344/bin/xray-linux-amd64")
 SNI = os.environ.get("UI3344_SNI", "www.apple.com")
 
+# 面板可能跑在 33441(HTTP，全新安装) 或 8443(HTTPS，启用域名功能后会被搬过去并
+# 换成 Cloudflare Origin CA 证书)。硬编码 http://127.0.0.1:33441 会在启用域名后
+# 直接失效：端口不对，而且 Origin CA 证书不在系统信任库里 →
+#   <urlopen error [SSL: CERTIFICATE_VERIFY_FAILED] ...>
+# 于是安装器的「创建预设协议」静默失败。这里自动探测实际地址，并对本地回环
+# 关闭证书校验（Origin CA 证书本来也不该进系统信任库）。
+BASE = os.environ.get("UI3344_URL", "").rstrip("/")
+BASE_CANDIDATES = (
+    "http://127.0.0.1:33441/ui3344",
+    "https://127.0.0.1:8443/ui3344",
+    "http://127.0.0.1:8443/ui3344",
+)
+
+_ssl_ctx = ssl.create_default_context()
+_ssl_ctx.check_hostname = False
+_ssl_ctx.verify_mode = ssl.CERT_NONE
+
 cj = http.cookiejar.CookieJar()
-op = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(cj))
+op = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(cj),
+                                 urllib.request.HTTPSHandler(context=_ssl_ctx))
+
+
+def detect_base():
+    """确定面板基址：优先 UI3344_URL，否则依次探测候选地址。"""
+    global BASE
+    if BASE:
+        return BASE
+    for cand in BASE_CANDIDATES:
+        try:
+            op.open(cand + "/csrf-token", timeout=5).read()
+            BASE = cand
+            return BASE
+        except Exception:  # noqa: BLE001
+            continue
+    BASE = BASE_CANDIDATES[0]
+    return BASE
 
 
 def get(path):
@@ -168,7 +202,66 @@ def inbound(remark, port, protocol, settings, stream):
             "expiryTime": 0, "trafficReset": "never", "shareAddrStrategy": "listen"}
 
 
+def repair_prohibited_vless(csrf):
+    """把既有的「VLESS + 无 TLS/Reality」入站原地修成 Reality。
+
+    本文件是**按 remark 幂等**的：已经存在的入站会被跳过。所以老版本（v1.7 及
+    更早）装出来的速度档不会被新建逻辑修到——而它恰恰是坏的：
+
+        vless://<uuid>@<公网IP>:8444?security=none&type=tcp
+
+    Xray 26.x 的 outbound 校验会直接拒绝加载这种配置：
+
+        failed to build outbound config ... vless without TLS or other encryption
+        is prohibited unless the server address is a private IP or domain
+
+    客户端连配置都起不来，节点在订阅里存在但永远用不了。这里在安装/升级时做一次
+    原地修复：只把这类入站的 streamSettings 换成 Reality，不动端口、备注与客户端。
+    """
+    try:
+        lst = json.loads(get("/panel/api/inbounds/list")).get("obj") or []
+    except Exception as e:  # noqa: BLE001
+        print("ui3344 presets: repair 列表读取失败 %s" % e, file=sys.stderr)
+        return 0
+
+    fixed = 0
+    for ib in lst:
+        if (ib.get("protocol") or "").lower() != "vless":
+            continue
+        raw = ib.get("streamSettings")
+        if isinstance(raw, str):
+            try:
+                stream = json.loads(raw or "{}")
+            except Exception:  # noqa: BLE001
+                continue
+        else:
+            stream = raw or {}
+        if (stream.get("network") or "").lower() != "tcp":
+            continue
+        if (stream.get("security") or "none").lower() != "none":
+            continue
+        try:
+            p, q = reality_keys()
+        except Exception:  # noqa: BLE001
+            print("ui3344 presets: repair 跳过（xray x25519 不可用）", file=sys.stderr)
+            return fixed
+        ib["streamSettings"] = reality(p, q, os.urandom(4).hex())
+        try:
+            r = json.loads(post_json("/panel/api/inbounds/update/%d" % ib["id"], ib, csrf))
+            if r.get("success"):
+                fixed += 1
+                print("ui3344 presets: repaired %s (端口 %s) -> Reality"
+                      % (ib.get("remark"), ib.get("port")))
+            else:
+                print("ui3344 presets: repair %s -> %s" % (ib.get("remark"), r.get("msg")),
+                      file=sys.stderr)
+        except Exception as e:  # noqa: BLE001
+            print("ui3344 presets: repair %s ERROR %s" % (ib.get("remark"), e), file=sys.stderr)
+    return fixed
+
+
 def main():
+    detect_base()
     token = re.search(r"[A-Za-z0-9_\-]{40,}", get("/csrf-token"))
     if not token:
         print("ui3344 presets: could not read csrf token", file=sys.stderr)
@@ -187,13 +280,34 @@ def main():
     except Exception:  # noqa: BLE001
         print("ui3344 presets: xray x25519 unavailable; Reality inbound will be skipped", file=sys.stderr)
 
+    # 速度档原本是「VLESS + 裸 TCP + 无加密」，但那已经不可能用了：Xray 26.x 的
+    # outbound 校验会直接拒绝加载
+    #
+    #   Failed to start: infra/conf: vless without TLS or other encryption is
+    #   prohibited unless the server address is a private IP or domain
+    #
+    # 客户端连配置都起不来——不是"不安全"，而是根本用不了。VLESS 自身不含任何
+    # 加密，脱离 TLS/Reality 就是明文，所以这里给速度档也套一层 Reality：不需要
+    # 证书、握手开销小，且现代客户端都接受。用独立的一对密钥与 shortId，
+    # 避免与 443 的安全档共用凭据。
+    priv2 = pub2 = sid2 = None
+    try:
+        priv2, pub2 = reality_keys()
+        sid2 = os.urandom(4).hex()
+    except Exception:  # noqa: BLE001
+        pass
+
     has_cert = os.path.exists(TLS_CERT + "/fullchain.pem") and os.path.exists(TLS_CERT + "/privkey.pem")
     ws_stream = ws("/ui3344ws")
     vmess_ws_stream = ws("/ui3344vm")
     tls_stream = tls_selfsigned() if has_cert else None
     reality_stream = reality(priv, pub, sid) if (priv and pub) else None
+    speed_stream = reality(priv2, pub2, sid2) if (priv2 and pub2) else TCP_NONE
+    if speed_stream is TCP_NONE:
+        print("ui3344 presets: WARNING 速度档拿不到 Reality 密钥，已退回裸 TCP；"
+              "Xray 26.x 客户端会拒绝加载该节点", file=sys.stderr)
     items = [
-        inbound("VLESS-速度-8443", 8443, "vless", vless_settings("vless-speed", TCP_NONE), TCP_NONE),
+        inbound("VLESS-速度-8443", 8443, "vless", vless_settings("vless-speed", speed_stream), speed_stream),
         # ws: flow must stay empty -- Vision cannot ride a WebSocket transport.
         inbound("VLESS-综合-WS-2087", 2087, "vless", vless_settings("vless-ws", ws_stream), ws_stream),
         inbound("VMess-速度-8080", 8080, "vmess", vmess_settings("vmess-speed"), TCP_NONE),
@@ -230,6 +344,11 @@ def main():
             failed += 1
             print("ui3344 presets: %s ERROR %s" % (it["remark"], e), file=sys.stderr)
     print("ui3344 presets: created=%d skipped=%d failed=%d" % (created, skipped, failed))
+
+    # 既有的坏入站不会被上面的幂等逻辑修到（同 remark 直接跳过），所以单独修一次。
+    repaired = repair_prohibited_vless(token)
+    if repaired:
+        print("ui3344 presets: repaired=%d (VLESS 裸 TCP -> Reality)" % repaired)
     return 0
 
 

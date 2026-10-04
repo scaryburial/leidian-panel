@@ -5,7 +5,7 @@
 都需要 TOTP 动态码。可作为交互菜单使用，也可直接带子命令调用（供 ui3344 菜单）。
 
 Env:
-  UI3344_URL   面板基址   (默认 http://127.0.0.1:33441/ui3344)
+  UI3344_URL   面板基址   (留空则自动探测 33441/HTTP 与 8443/HTTPS)
   UI3344_USER  登录用户名 (默认 3344)
   UI3344_PASS  登录密码   (默认 3344)
 """
@@ -13,16 +13,48 @@ import http.cookiejar
 import json
 import os
 import re
+import ssl
 import sys
 import urllib.parse
 import urllib.request
 
-BASE = os.environ.get("UI3344_URL", "http://127.0.0.1:33441/ui3344").rstrip("/")
 USER = os.environ.get("UI3344_USER", "3344")
 PASS = os.environ.get("UI3344_PASS", "3344")
 
+# 面板启用域名功能后会被搬到 8443 并换用 Cloudflare Origin CA 证书，而那个证书
+# 不在系统信任库里；硬编码 http://127.0.0.1:33441 会直接失效
+# （<urlopen error [SSL: CERTIFICATE_VERIFY_FAILED] ...>）。这里自动探测实际地址，
+# 并对本地回环关闭证书校验。
+BASE = os.environ.get("UI3344_URL", "").rstrip("/")
+BASE_CANDIDATES = (
+    "http://127.0.0.1:33441/ui3344",
+    "https://127.0.0.1:8443/ui3344",
+    "http://127.0.0.1:8443/ui3344",
+)
+
+_ssl_ctx = ssl.create_default_context()
+_ssl_ctx.check_hostname = False
+_ssl_ctx.verify_mode = ssl.CERT_NONE
+
 cj = http.cookiejar.CookieJar()
-op = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(cj))
+op = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(cj),
+                                 urllib.request.HTTPSHandler(context=_ssl_ctx))
+
+
+def detect_base():
+    """确定面板基址：优先 UI3344_URL，否则依次探测候选地址。"""
+    global BASE
+    if BASE:
+        return BASE
+    for cand in BASE_CANDIDATES:
+        try:
+            op.open(cand + "/csrf-token", timeout=5).read()
+            BASE = cand
+            return BASE
+        except Exception:  # noqa: BLE001
+            continue
+    BASE = BASE_CANDIDATES[0]
+    return BASE
 
 
 def get(path):
@@ -43,6 +75,7 @@ def post_form(path, data, csrf):
 
 
 def login():
+    detect_base()
     m = re.search(r"[A-Za-z0-9_\-]{40,}", get("/csrf-token"))
     if not m:
         print("无法获取 CSRF token", file=sys.stderr)

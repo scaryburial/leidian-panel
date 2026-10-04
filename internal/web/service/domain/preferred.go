@@ -42,11 +42,16 @@
 package domain
 
 import (
+	"bufio"
 	"context"
+	"crypto/rand"
+	"crypto/tls"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -302,6 +307,161 @@ func ResolvePreferredDomains(ctx context.Context, candidates []string) (domains 
 	return domains, rejected
 }
 
+// 单个候选域名的端到端探测超时，以及整批探测的总预算。
+const (
+	preferredProbeTimeout = 8 * time.Second
+	preferredProbeBudget  = 25 * time.Second
+)
+
+// probePreferredDomain 对一个候选优选域名做**真实的端到端探测**：以 fqdn 作为
+// SNI 与 Host，连到候选域名的 port 上请求 path，只接受 101 Switching Protocols。
+//
+// 为什么不能只校验「A 记录落在 CF 网段」——实测（同一台源站、同一时刻）：
+//
+//	time.is:2087          → 建连超时
+//	icook.hk:2087         → 301（CF 边缘把请求交给了 icook.hk 自己的站点）
+//	ip.sb:2087            → 521（CF 报 web server is down）
+//	japan.com:2087        → 建连超时
+//	www.visa.com.sg:2087  → 建连超时
+//	<自有域名>:2087        → 101 ✅
+//
+// 这些域名虽然解析到 CF 网段，却**不会**把流量路由回本机入站。只按网段过滤就
+// 把它们全部写进订阅，结果是客户端拿到一屏连不上的死节点。只有握手到 101 才
+// 能证明「SNI → 本机入站」这条链路真的通。
+func probePreferredDomain(ctx context.Context, host, fqdn string, port int, path string) (bool, string) {
+	if strings.TrimSpace(path) == "" {
+		path = "/"
+	}
+	dialer := &net.Dialer{}
+	conn, err := dialer.DialContext(ctx, "tcp", net.JoinHostPort(host, strconv.Itoa(port)))
+	if err != nil {
+		return false, "TCP 连接失败"
+	}
+	defer conn.Close()
+
+	if deadline, ok := ctx.Deadline(); ok {
+		_ = conn.SetDeadline(deadline)
+	} else {
+		_ = conn.SetDeadline(time.Now().Add(preferredProbeTimeout))
+	}
+
+	// 这里不校验证书：客户端会按 fqdn 去校验 CF 边缘的证书，而本探测只想知道
+	// CF 有没有把这条连接送回本机入站，所以只要求 TLS 握手能完成。
+	tlsConn := tls.Client(conn, &tls.Config{ //nolint:gosec // 探测用途，不做证书校验
+		ServerName:         fqdn,
+		InsecureSkipVerify: true,
+		NextProtos:         []string{"http/1.1"},
+	})
+	if err := tlsConn.HandshakeContext(ctx); err != nil {
+		return false, "TLS 握手失败"
+	}
+
+	nonce := make([]byte, 16)
+	if _, err := rand.Read(nonce); err != nil {
+		return false, "随机数生成失败"
+	}
+	req := "GET " + path + " HTTP/1.1\r\n" +
+		"Host: " + fqdn + "\r\n" +
+		"Upgrade: websocket\r\n" +
+		"Connection: Upgrade\r\n" +
+		"Sec-WebSocket-Version: 13\r\n" +
+		"Sec-WebSocket-Key: " + base64.StdEncoding.EncodeToString(nonce) + "\r\n" +
+		"User-Agent: ui3344-domain-probe\r\n\r\n"
+	if _, err := tlsConn.Write([]byte(req)); err != nil {
+		return false, "请求写入失败"
+	}
+
+	line, err := bufio.NewReader(tlsConn).ReadString('\n')
+	if err != nil {
+		return false, "无 HTTP 响应"
+	}
+	fields := strings.Fields(line)
+	if len(fields) >= 2 {
+		if fields[1] == "101" {
+			return true, ""
+		}
+		return false, "HTTP " + fields[1]
+	}
+	return false, "无法解析响应行"
+}
+
+// probePreferred 是端到端探测的注入点：测试替换它以免真的打公网。
+var probePreferred = probePreferredDomain
+
+// filterReachablePreferredDomains 并发探测候选域名，只保留真的能把 WS 请求送回
+// 本机入站的。保序、best effort（预算用尽时按已完成的部分返回）。
+func filterReachablePreferredDomains(ctx context.Context, candidates []string, fqdn string, port int, path string) (usable []string, rejected []RejectedDomain) {
+	if len(candidates) == 0 {
+		return nil, nil
+	}
+
+	type probeResult struct {
+		domain string
+		ok     bool
+		reason string
+	}
+
+	probeCtx, cancel := context.WithTimeout(ctx, preferredProbeBudget)
+	defer cancel()
+
+	jobs := make(chan string)
+	results := make(chan probeResult, len(candidates))
+	var wg sync.WaitGroup
+
+	workers := preferredResolveWorkers
+	if workers > len(candidates) {
+		workers = len(candidates)
+	}
+	for i := 0; i < workers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for d := range jobs {
+				// 给每个候选**单独**限时：否则某个「DNS 能解析但 TCP 黑洞」的域名
+				// 会吃掉整个 25s 总预算，把其余候选全判成「探测超时」。
+				cctx, cancel := context.WithTimeout(probeCtx, preferredProbeTimeout)
+				ok, reason := probePreferred(cctx, d, fqdn, port, path)
+				cancel()
+				results <- probeResult{domain: d, ok: ok, reason: reason}
+			}
+		}()
+	}
+
+	go func() {
+		defer close(jobs)
+		for _, d := range candidates {
+			select {
+			case jobs <- d:
+			case <-probeCtx.Done():
+				return
+			}
+		}
+	}()
+
+	go func() {
+		wg.Wait()
+		close(results)
+	}()
+
+	byName := make(map[string]probeResult, len(candidates))
+	for r := range results {
+		byName[r.domain] = r
+	}
+
+	for _, d := range candidates {
+		r, ok := byName[d]
+		switch {
+		case !ok:
+			rejected = append(rejected, RejectedDomain{d, "端到端探测超时"})
+		case r.ok:
+			usable = append(usable, d)
+		default:
+			rejected = append(rejected, RejectedDomain{d, "端到端探测失败（" + r.reason + "）"})
+		}
+	}
+	return usable, rejected
+}
+
 // parseStream 解析入站的 stream_settings JSON。空串视为空对象。
 func parseStream(raw string) (map[string]any, error) {
 	m := map[string]any{}
@@ -413,9 +573,35 @@ func SyncPreferredHosts(ctx context.Context, fqdn string, candidates []string) (
 		}, nil
 	}
 
-	domains, rejected = ResolvePreferredDomains(ctx, candidates)
-	if len(domains) == 0 {
-		return nil, rejected, []string{"候选优选域名全部未通过 Cloudflare 网段校验，已跳过优选生成"}, nil
+	// 自有域名永远排第一：它是唯一被实测证明可用的地址（101），放在最前可以保证
+	// 即使所有第三方优选域名都失效，订阅里仍然至少有一个能连通的域名节点。
+	// 之前的实现完全依赖第三方候选域名，结果是一整屏死节点、没有一个能用的地址。
+	//
+	// 注意：**返回值 domains 只包含第三方优选域名**（面板用它做展示与计数），
+	// 自有域名只加进 Hosts——否则面板会把 fqdn 既单列一遍又在优选列表里再列一遍。
+	domains, resolveRejected := ResolvePreferredDomains(ctx, candidates)
+	rejected = append(rejected, resolveRejected...)
+
+	if len(domains) > 0 {
+		// 用端口最小的那个加密入站作为探测靶子：自有域名与第三方优选域名走的是
+		// 同一条「SNI → CF 边缘 → 本机入站」链路。
+		probeTarget := inbounds[0]
+		usable, probeRejected := filterReachablePreferredDomains(ctx, domains, fqdn, probeTarget.Port, probeTarget.Path)
+		rejected = append(rejected, probeRejected...)
+		domains = usable
+		warnings = append(warnings, fmt.Sprintf(
+			"优选域名端到端探测：%d 个通过、%d 个被剔除（剔除的写进订阅只会得到连不上的死节点）",
+			len(domains), len(probeRejected)))
+	} else {
+		warnings = append(warnings, "候选优选域名全部未通过 Cloudflare 网段校验，本次只保留自有域名")
+	}
+
+	hosts := make([]string, 0, len(domains)+1)
+	hosts = append(hosts, fqdn)
+	for _, d := range domains {
+		if !strings.EqualFold(d, fqdn) {
+			hosts = append(hosts, d)
+		}
 	}
 
 	ids := make([]int, 0, len(inbounds))
@@ -433,7 +619,7 @@ func SyncPreferredHosts(ctx context.Context, fqdn string, candidates []string) (
 	group := &entity.HostGroup{
 		Remark:     preferredGroupRemark,
 		InboundIds: ids,
-		Hosts:      domains,
+		Hosts:      hosts,
 		Port:       0,
 		Path:       "",
 		Security:   "same",
@@ -452,9 +638,12 @@ func SyncPreferredHosts(ctx context.Context, fqdn string, candidates []string) (
 		ports = append(ports, fmt.Sprintf("%d", ib.Port))
 	}
 	warnings = append(warnings, fmt.Sprintf(
-		"优选域名已生成：%d 个域名 × %d 个加密入站（端口 %s）",
-		len(domains), len(inbounds), strings.Join(ports, "/")))
+		"优选域名已生成：%d 个域名（含自有域名 %s）× %d 个加密入站（端口 %s）",
+		len(hosts), fqdn, len(inbounds), strings.Join(ports, "/")))
 
+	// 注意返回的是 domains（第三方优选域名），**不含自有域名**：调用方把它存进
+	// storedState.PreferredDomains 并在面板里展示，而面板已经单独列了 fqdn，
+	// 带上会重复显示。自有域名只在 Hosts 里。
 	return domains, rejected, warnings, nil
 }
 
