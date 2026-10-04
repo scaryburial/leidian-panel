@@ -38,6 +38,9 @@ export const ClientRecordSchema = z
     tgId: z.union([z.number(), z.string()]).optional(),
     group: z.string().optional(),
     comment: z.string().optional(),
+    // Card key (卡密) issued to this client; '' means it has not been given one
+    // yet, which is what the clients page keys its "Generate" affordance on.
+    cardKey: z.string().optional(),
     enable: z.boolean().optional(),
     reset: z.number().optional(),
     resetDay: z.number().optional(),

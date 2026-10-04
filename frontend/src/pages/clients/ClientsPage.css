@@ -315,3 +315,17 @@
   text-align: center;
   color: var(--ant-color-text-secondary);
 }
+
+/* The un-issued key sits in a table cell and never grows past its column, so
+ * unlike the modal's result list it needs no extra width guard. */
+.card-key-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.card-key-cell .card-key-value {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 12px;
+  white-space: nowrap;
+}

@@ -36,6 +36,7 @@ import {
   EditOutlined,
   FilterOutlined,
   InfoCircleOutlined,
+  KeyOutlined,
   LinkOutlined,
   MoreOutlined,
   PlusOutlined,
@@ -69,9 +70,18 @@ import type {
 import ClientTrafficCell from '@/components/clients/ClientTrafficCell';
 import ClientSpeedTag, { isActiveSpeed } from '@/components/clients/ClientSpeedTag';
 import ClientCardComment from '@/components/clients/ClientCardComment';
+import CardKeyCell from '@/components/clients/CardKeyCell';
 import AppSidebar from '@/layouts/AppSidebar';
-import { HttpUtil, IntlUtil, SizeFormatter } from '@/utils';
-import { formatRegion, isPrivateIp, normalizeClientIps, type ClientIpInfo } from '@/lib/clients/ip-log';
+import { FileManager, HttpUtil, IntlUtil, SizeFormatter } from '@/utils';
+import { cardKeyExportFileName, normalizeCardKey } from '@/lib/clients/card-keys';
+import type { CardKeyGeneratePayload } from '@/schemas/cardKey';
+import { useCardKeys, exportCardKeys } from '@/hooks/useCardKeys';
+import {
+  formatRegion,
+  isPrivateIp,
+  normalizeClientIps,
+  type ClientIpInfo,
+} from '@/lib/clients/ip-log';
 import { setMessageInstance } from '@/utils/messageBus';
 import { LazyMount } from '@/components/utility';
 import {
@@ -89,6 +99,7 @@ const SubLinksModal = lazy(() => import('./SubLinksModal'));
 const BulkAddToGroupModal = lazy(() => import('./BulkAddToGroupModal'));
 const BulkAttachInboundsModal = lazy(() => import('./BulkAttachInboundsModal'));
 const BulkDetachInboundsModal = lazy(() => import('./BulkDetachInboundsModal'));
+const CardKeyBulkModal = lazy(() => import('./CardKeyBulkModal'));
 const TextModal = lazy(() => import('@/components/feedback/TextModal'));
 const PromptModal = lazy(() => import('@/components/feedback/PromptModal'));
 import { ClientInboundChips, ClientRowActions } from './RowCells';
@@ -339,6 +350,8 @@ export default function ClientsPage() {
     hydrate,
   } = useClients();
 
+  const { generate: generateCardKeys } = useCardKeys();
+
   useWebSocket({
     traffic: applyTrafficEvent,
     client_stats: applyClientStatsEvent,
@@ -370,6 +383,8 @@ export default function ClientsPage() {
   const [bulkGroupOpen, setBulkGroupOpen] = useState(false);
   const [bulkAttachOpen, setBulkAttachOpen] = useState(false);
   const [bulkDetachOpen, setBulkDetachOpen] = useState(false);
+  const [cardKeyBulkOpen, setCardKeyBulkOpen] = useState(false);
+  const [cardKeyGenerating, setCardKeyGenerating] = useState<string | null>(null);
   const [selectedRowKeys, setSelectedRowKeys] = useState<string[]>([]);
 
   const [textOpen, setTextOpen] = useState(false);
@@ -566,11 +581,9 @@ export default function ClientsPage() {
     let cancelled = false;
     void (async () => {
       try {
-        const msg = await HttpUtil.post(
-          '/panel/api/clients/onlineIps',
-          undefined,
-          { silent: true },
-        );
+        const msg = await HttpUtil.post('/panel/api/clients/onlineIps', undefined, {
+          silent: true,
+        });
         if (!cancelled) {
           setOnlineIpsMap((msg?.obj as Record<string, string[]>) ?? {});
         }
@@ -650,6 +663,13 @@ export default function ClientsPage() {
   // Sort is server-side now; the page already arrives in the requested
   // order, so we just hand it through.
   const sortedClients = filteredClients;
+
+  /* Issued keys are what the operator scans the page for, so the count of rows
+   * still waiting for one is shown next to the other filter-bar counters. */
+  const missingCardKeyCount = useMemo(
+    () => filteredClients.filter((c) => !normalizeCardKey(c.cardKey)).length,
+    [filteredClients],
+  );
 
   function remainingLabel(row: ClientRecord) {
     const total = row.totalGB || 0;
@@ -954,6 +974,59 @@ export default function ClientsPage() {
     });
   }
 
+  async function onCopyCardKey(key: string) {
+    try {
+      await navigator.clipboard.writeText(normalizeCardKey(key));
+      messageApi.success(t('copied'));
+    } catch {
+      messageApi.error(t('somethingWentWrong'));
+    }
+  }
+
+  /* One client, one key: the inbound is the first the client is attached to,
+   * which is also the inbound the row's attach chips list first. */
+  async function onGenerateCardKey(email: string) {
+    const client = clients.find((c) => c.email === email);
+    const inboundId = client?.inboundIds?.[0] ?? 0;
+    if (!inboundId) {
+      messageApi.warning(t('pages.clients.cardKeys.inboundRequired'));
+      return;
+    }
+    setCardKeyGenerating(email);
+    try {
+      const msg = await generateCardKeys({
+        inboundId,
+        count: 1,
+        totalGB: 0,
+        expiryDays: 0,
+        remarkPrefix: email,
+        groupName: client?.group ?? '',
+      });
+      if (msg?.success)
+        messageApi.success(t('pages.clients.cardKeys.toasts.generated', { count: 1 }));
+    } finally {
+      setCardKeyGenerating(null);
+    }
+  }
+
+  async function onBulkGenerateCardKeys(payload: CardKeyGeneratePayload): Promise<string[] | null> {
+    const msg = await generateCardKeys(payload);
+    if (!msg?.success) return null;
+    return msg.obj?.cardKeys ?? [];
+  }
+
+  async function onExportCardKeys(inboundId: number) {
+    try {
+      const csv = await exportCardKeys(inboundId);
+      FileManager.downloadTextFile(csv, cardKeyExportFileName(inboundId), {
+        type: 'text/csv;charset=utf-8',
+      });
+      messageApi.success(t('pages.clients.cardKeys.toasts.exported'));
+    } catch {
+      messageApi.error(t('pages.clients.cardKeys.exportFailed'));
+    }
+  }
+
   function onBulkSetEnable(enable: boolean) {
     const emails = [...selectedRowKeys];
     if (emails.length === 0) return;
@@ -1130,7 +1203,8 @@ export default function ClientsPage() {
             const limit = record.limitIp ?? 0;
             const countText =
               onlineCount > 0 ? (limit > 0 ? ` ${onlineCount}/${limit}` : ` ${onlineCount}`) : '';
-            const tip = limit > 0 ? `${t('pages.clients.online')} / ${limit}` : t('pages.clients.online');
+            const tip =
+              limit > 0 ? `${t('pages.clients.online')} / ${limit}` : t('pages.clients.online');
             return (
               <Tooltip title={tip}>
                 <Tag color="green" className="dot-tag">
@@ -1229,6 +1303,20 @@ export default function ClientsPage() {
         },
       },
       {
+        title: t('pages.clients.cardKeys.column'),
+        key: 'cardKey',
+        width: 180,
+        render: (_v, record) => (
+          <CardKeyCell
+            cardKey={record.cardKey}
+            email={record.email}
+            generating={cardKeyGenerating === record.email}
+            onCopy={onCopyCardKey}
+            onGenerate={onGenerateCardKey}
+          />
+        ),
+      },
+      {
         title: t('pages.clients.traffic'),
         key: 'traffic',
         width: 300,
@@ -1291,6 +1379,7 @@ export default function ClientsPage() {
       trafficDiff,
       clientSpeed,
       onlineIpsMap,
+      cardKeyGenerating,
     ],
   );
 
@@ -1482,6 +1571,13 @@ export default function ClientsPage() {
                               {t('pages.clients.selectedCount', { count: selectedRowKeys.length })}
                             </Tag>
                           )}
+                          <Button
+                            icon={<KeyOutlined />}
+                            onClick={() => setCardKeyBulkOpen(true)}
+                            aria-label={t('pages.clients.cardKeys.title')}
+                          >
+                            {!isMobile && t('pages.clients.cardKeys.title')}
+                          </Button>
                           <Dropdown
                             trigger={['click']}
                             placement="bottomRight"
@@ -1641,6 +1737,18 @@ export default function ClientsPage() {
                             label: t(o.labelKey),
                           }))}
                         />
+                        {missingCardKeyCount > 0 && (
+                          <Tag
+                            color="orange"
+                            icon={<KeyOutlined />}
+                            style={{ marginInlineEnd: 0 }}
+                            title={t('pages.clients.cardKeys.missingHint')}
+                          >
+                            {t('pages.clients.cardKeys.missingCount', {
+                              count: missingCardKeyCount,
+                            })}
+                          </Tag>
+                        )}
                         {activeCount > 0 && (
                           <Button
                             size={isMobile ? 'small' : 'middle'}
@@ -2028,6 +2136,15 @@ export default function ClientsPage() {
               }
               return null;
             }}
+          />
+        </LazyMount>
+        <LazyMount when={cardKeyBulkOpen}>
+          <CardKeyBulkModal
+            open={cardKeyBulkOpen}
+            inbounds={inbounds}
+            onOpenChange={setCardKeyBulkOpen}
+            onGenerate={onBulkGenerateCardKeys}
+            onExport={onExportCardKeys}
           />
         </LazyMount>
         <LazyMount when={subLinksOpen}>

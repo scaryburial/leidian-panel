@@ -91,6 +91,10 @@ func (a *ClientController) initRouter(g *gin.RouterGroup) {
 	g.POST("/clientIpsByGuid", a.clientIpsByGuid)
 	g.POST("/activeInbounds", a.activeInbounds)
 	g.POST("/lastOnline", a.lastOnline)
+
+	// 卡密 (card key) endpoints — see client_cardkey.go.
+	g.POST("/cardkeys/generate", a.generateCardKeys)
+	g.GET("/cardkeys/export", a.exportCardKeys)
 }
 
 func (a *ClientController) list(c *gin.Context) {

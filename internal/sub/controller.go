@@ -27,6 +27,16 @@ import (
 const (
 	subMihomoPath      = "/mihomo/"
 	subClashLegacyPath = "/clash-legacy/"
+	// subCardKeyPath is the card-key ("卡密") subscription prefix. A request to
+	// /c/<card_key> is resolved to the subId that owns the key and then served
+	// by the same handlers as /<subPath>/<subId> — same body, same
+	// Subscription-Userinfo headers, same Clash/JSON branches.
+	subCardKeyPath = "/c/"
+	// cardKeyMissParam is what an unknown or malformed card key resolves to.
+	// It holds a NUL, which validateClientSubID forbids in a stored subId, so
+	// no client can ever own it — the request simply behaves like a request
+	// for a subscription that does not exist.
+	cardKeyMissParam = "\x00cardkey-miss"
 )
 
 // writeSubError translates a service-layer result into an HTTP response.
@@ -345,6 +355,81 @@ func (a *SUBController) initRouter(g *gin.RouterGroup) {
 			gLegacy.HEAD(":subid", a.subClashLegacy)
 		}
 	}
+	a.registerCardKeyRoutes(g)
+}
+
+// cardKeyParamResolver rewrites the :subid route parameter of a card-key
+// request into the sub_id that owns the card key. Every downstream handler —
+// raw links, Clash, Xray JSON, the HWID gate, the HTML info page and the
+// Subscription-Userinfo headers — then runs its unchanged code against the
+// resolved subscription, so /c/<card_key> and /<subPath>/<subId> cannot drift
+// apart: they are the same code path with a different parameter.
+//
+// A malformed or unknown card key is deliberately NOT answered here. It is
+// rewritten to cardKeyMissParam, an id no client can own, so the request takes
+// the same path — and produces the same status, body and headers — as a
+// request for an unknown subId. That keeps a caller from telling "no such card
+// key" apart from "no such subscription", and keeps the HWID gate's rejection
+// headers identical. A client that is disabled, expired or over quota resolves
+// normally and is accepted or rejected by the ordinary subscription logic,
+// exactly as its subId route would be.
+func (a *SUBController) cardKeyParamResolver() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		subID, found, err := a.clientService.GetSubIDByCardKey(c.Param("subid"))
+		if err != nil {
+			logger.Warning("sub: card key lookup failed:", err)
+			writeSubError(c, err)
+			c.Abort()
+			return
+		}
+		if !found {
+			subID = cardKeyMissParam
+		}
+		for i := range c.Params {
+			if c.Params[i].Key == "subid" {
+				c.Params[i].Value = subID
+			}
+		}
+		c.Next()
+	}
+}
+
+// registerCardKeyRoutes mounts the card-key subscription endpoints. The plain
+// /c/<card_key> route reuses a.subs verbatim, so a card key gets the same
+// content, the same auto-detection (Clash / Xray JSON / raw) and the same
+// headers as the subId route. The explicit clash/ and json/ aliases are there
+// because a client that is not auto-detected would otherwise have no way to ask
+// for those formats from a card key.
+//
+// The route is skipped, with a warning, when an operator has configured a
+// subscription path that already owns "/c/" — registering both would panic the
+// subscription server at startup.
+func (a *SUBController) registerCardKeyRoutes(g *gin.RouterGroup) {
+	if owner := a.configuredSubscriptionPathOwner(subCardKeyPath); owner != "" {
+		logger.Warningf("Card key subscription path %q is unavailable because it conflicts with the configured %s path", subCardKeyPath, owner)
+		return
+	}
+	if a.clashEnabled && (sameSubscriptionPath(subCardKeyPath, subMihomoPath) || sameSubscriptionPath(subCardKeyPath, subClashLegacyPath)) {
+		logger.Warningf("Card key subscription path %q is unavailable because it conflicts with a Clash alias path", subCardKeyPath)
+		return
+	}
+
+	// The static clash/ and json/ children are registered before the :subid
+	// wildcard so the router tree keeps its static-before-wildcard shape.
+	gCard := g.Group(subCardKeyPath)
+	gCard.Use(a.cardKeyParamResolver())
+	if a.clashEnabled {
+		gCard.GET("clash/:subid", a.subClashs)
+		gCard.HEAD("clash/:subid", a.subClashs)
+	}
+	if a.jsonEnabled {
+		gCard.GET("json/:subid", a.subJsons)
+		gCard.HEAD("json/:subid", a.subJsons)
+	}
+	gCard.GET(":subid", a.subs)
+	gCard.HEAD(":subid", a.subs)
+	gCard.GET(":subid/hwid-status", a.hwidStatus)
+	gCard.HEAD(":subid/hwid-status", a.hwidStatus)
 }
 
 func sameSubscriptionPath(left, right string) bool {

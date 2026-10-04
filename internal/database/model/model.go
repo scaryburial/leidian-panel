@@ -950,6 +950,17 @@ type ClientRecord struct {
 	// Owned solely by the node-snapshot sweep, which soft-orphans instead of
 	// deleting; orphans from any other cause stay at zero and are never reaped.
 	SyncOrphanedAt int64 `json:"-" gorm:"column:sync_orphaned_at;default:0"`
+	// CardKey is the 卡密 (card key) that resolves to this client's
+	// subscription as GET /c/<card_key>, so a customer never has to be handed
+	// the subId. Stored in the canonical internal/util/cardkey form — 12
+	// Crockford Base32 characters, no prefix and no hyphens — and rendered as
+	// LD-XXXX-XXXX-XXXX for display (cardkey.Format).
+	//
+	// A pointer, not a plain string, on purpose: the column is unique, and a
+	// UNIQUE index treats NULL as distinct in SQLite, PostgreSQL and MySQL
+	// alike, whereas "" would collide on the second client ever created
+	// without a card key — which is nearly all of them.
+	CardKey *string `json:"cardKey,omitempty" gorm:"column:card_key;uniqueIndex"`
 }
 
 func (ClientRecord) TableName() string { return "clients" }

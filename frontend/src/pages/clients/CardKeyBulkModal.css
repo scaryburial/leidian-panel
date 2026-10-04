@@ -1,0 +1,26 @@
+/* Card-key (卡密) surfaces. Imported by the bulk-generate modal rather than
+ * ClientsPage.css: that file belongs to ClientsPage.tsx, which lazy-imports the
+ * modal, so importing it back would close a module cycle. */
+.card-key-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.card-key-cell .card-key-value {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.card-key-result {
+  max-height: 280px;
+  margin-top: 12px;
+  overflow: auto;
+}
+
+.card-key-result .ant-typography {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 12px;
+  white-space: nowrap;
+}
