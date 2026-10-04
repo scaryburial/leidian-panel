@@ -63,13 +63,16 @@ var defaultValueMap = map[string]string{
 	"apiToken":               "",
 	"relayConfig":            "",
 	"panelUpdateCheckEnable": "true",
-	"panelUpdateRepo":        "scaryburial/leidian-panel",
-	"cfApiToken":             defaultCFApiToken,
-	"cfRootDomain":           "578272.xyz",
-	"domainOtpSecret":        defaultDomainOtpSecret,
-	"domainConfig":           "",
-	"domainEnabled":          "false",
-	"reverseConfig":          "",
+	// 默认留空：发布出去的二进制里不应带任何指向维护者仓库的字符串。
+	// 需要检查更新的运维自己在「面板设置 → 更新仓库」里填 owner/repo，
+	// 该值存在他自己的数据库里，不会随安装包扩散。
+	"panelUpdateRepo": "",
+	"cfApiToken":      defaultCFApiToken,
+	"cfRootDomain":    "578272.xyz",
+	"domainOtpSecret": defaultDomainOtpSecret,
+	"domainConfig":    "",
+	"domainEnabled":   "false",
+	"reverseConfig":   "",
 	// Node mTLS material (opt-in). All default empty: the CA + master client
 	// cert are minted lazily on first use, and the node-side trust CA is pasted
 	// in by the operator. Kept out of entity.AllSetting so private keys never
@@ -502,12 +505,13 @@ func (s *SettingService) SetPanelUpdateCheckEnable(value bool) error {
 	return s.setBool("panelUpdateCheckEnable", value)
 }
 
-// GetPanelUpdateRepo returns the "owner/repo" of this fork queried by the panel
-// update check.
+// GetPanelUpdateRepo returns the "owner/repo" queried by the panel update check.
+// 未配置时返回空串——由调用方决定如何提示，不要在代码里回退到某个写死的仓库，
+// 否则二进制会泄露维护者的仓库地址。
 func (s *SettingService) GetPanelUpdateRepo() string {
 	value, err := s.getString("panelUpdateRepo")
-	if err != nil || strings.TrimSpace(value) == "" {
-		return "scaryburial/leidian-panel"
+	if err != nil {
+		return ""
 	}
 	return strings.TrimSpace(value)
 }

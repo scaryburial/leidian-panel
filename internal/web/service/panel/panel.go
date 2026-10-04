@@ -42,11 +42,10 @@ type PanelUpdateInfo struct {
 }
 
 const (
-	// 必须指向**本仓库**。原先指向 MHSanaei/3x-ui 的 main 分支：那段脚本会被下载
-	// 后以 root 执行（systemd-run / bash -lc），等于把 root 交给一个可变引用。
-	// 该自更新路径目前在 StartUpdate/StartUpdateChannel 里已被禁用，这里改成自己的
-	// 仓库属于纵深防御——万一将来重新启用，也不会去执行上游代码。
-	panelUpdaterURL      = "https://raw.githubusercontent.com/scaryburial/leidian-panel/main/update.sh"
+	// 自更新脚本的地址由「面板更新仓库」设置推导，不再把某个仓库写死在这里：
+	// 发布出去的二进制不应包含任何指向维护者仓库的字符串。
+	// 该自更新路径目前在 StartUpdate/StartUpdateChannel 里已被禁用；即便将来重新
+	// 启用，未配置仓库时也只是拿不到脚本而已，不会去执行别处的代码。
 	maxPanelUpdaterBytes = 2 << 20
 	// devReleaseTag is the fixed-tag rolling pre-release the CI force-moves to the
 	// newest main commit; the dev update channel installs from it.
@@ -156,9 +155,10 @@ func (s *PanelService) GetUpdateInfo() (*PanelUpdateInfo, error) {
 	if latest == "" {
 		return info, nil
 	}
-	info.Repo = repo
 	info.LatestVersion = latest
-	info.ReleaseURL = release.HTMLURL
+	// 故意不回填 Repo / ReleaseURL：这两个字段会被前端的「检查更新」弹窗直接显示，
+	// 而它们的值里含有维护者的仓库地址。面板使用者不需要（也不应该）从中得知
+	// 二进制是从哪个仓库构建出来的。运维自己知道仓库在哪，不需要面板告诉他。
 	info.UpdateAvailable = isNewerVersion(latest, current)
 	return info, nil
 }
@@ -392,9 +392,23 @@ func releaseUpdateSlot() {
 	updateMu.Unlock()
 }
 
+// panelUpdaterURLFor 由「面板更新仓库」设置推导自更新脚本地址。
+// 未配置仓库时返回空串，调用方据此拒绝下载——绝不回退到某个写死的仓库。
+func panelUpdaterURLFor(repo string) string {
+	repo = strings.TrimSpace(repo)
+	if repo == "" {
+		return ""
+	}
+	return "https://raw.githubusercontent.com/" + repo + "/main/update.sh"
+}
+
 func downloadPanelUpdater() (string, error) {
+	url := panelUpdaterURLFor((&service.SettingService{}).GetPanelUpdateRepo())
+	if url == "" {
+		return "", fmt.Errorf("panel updater is not configured")
+	}
 	client := (&service.SettingService{}).NewProxiedHTTPClient(15 * time.Second)
-	req, reqErr := http.NewRequestWithContext(context.Background(), http.MethodGet, panelUpdaterURL, nil)
+	req, reqErr := http.NewRequestWithContext(context.Background(), http.MethodGet, url, nil)
 	if reqErr != nil {
 		return "", fmt.Errorf("download panel updater: %w", reqErr)
 	}
