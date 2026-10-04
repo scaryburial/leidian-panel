@@ -86,11 +86,23 @@ func TestMovePanelToCFPort_AndRestore(t *testing.T) {
 	if got := webPortOf(t, m); got != cfPanelPort {
 		t.Errorf("webPort = %d, want %d", got, cfPanelPort)
 	}
-	if inboundEnabled(t, parked.Id) {
-		t.Errorf("占用 %d 的入站应被临时停用，否则与面板抢端口", cfPanelPort)
+	// §10.5：占用面板端口的入站应被**挪到空闲端口并保持启用**，而不是被停用——
+	// 用户不该平白少一个入口。旧断言（「应被临时停用」）在 §10.5 之后已经过时。
+	if !inboundEnabled(t, parked.Id) {
+		t.Errorf("占用 %d 的入站应被挪到空闲端口并保持启用（§10.5），不应被停用", cfPanelPort)
 	}
 	if st.ParkedInbound != parked.Id {
 		t.Errorf("ParkedInbound = %d, want %d", st.ParkedInbound, parked.Id)
+	}
+	if st.ParkedPort <= cfPanelPort {
+		t.Errorf("ParkedPort = %d，应是从 %d 起的第一个空闲端口", st.ParkedPort, cfPanelPort+1)
+	}
+	var moved model.Inbound
+	if err := database.GetDB().First(&moved, parked.Id).Error; err != nil {
+		t.Fatalf("重新读取入站失败: %v", err)
+	}
+	if moved.Port != st.ParkedPort {
+		t.Errorf("入站实际端口 = %d，与 ParkedPort = %d 不一致", moved.Port, st.ParkedPort)
 	}
 	if len(warnings) == 0 {
 		t.Errorf("应提示操作者端口变更与页面会断开")
@@ -109,7 +121,14 @@ func TestMovePanelToCFPort_AndRestore(t *testing.T) {
 		t.Errorf("还原后 webPort = %d, want %d", got, before)
 	}
 	if !inboundEnabled(t, parked.Id) {
-		t.Errorf("还原后入站 %d 应重新启用", parked.Id)
+		t.Errorf("还原后入站 %d 应保持启用", parked.Id)
+	}
+	var restored model.Inbound
+	if err := database.GetDB().First(&restored, parked.Id).Error; err != nil {
+		t.Fatalf("重新读取入站失败: %v", err)
+	}
+	if restored.Port != cfPanelPort {
+		t.Errorf("还原后入站端口 = %d，应挪回 %d", restored.Port, cfPanelPort)
 	}
 }
 

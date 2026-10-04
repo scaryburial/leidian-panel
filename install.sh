@@ -10,8 +10,8 @@
 set -e
 
 REPO="scaryburial/leidian-panel"
-# 明确的发布标签（发布新版本时更新这里；也可用环境变量覆盖： UI3344_TAG=v1.5 bash install.sh）
-TAG="${UI3344_TAG:-v1.7}"
+# 明确的发布标签（发布新版本时更新这里；也可用环境变量覆盖： UI3344_TAG=v1.7 bash install.sh）
+TAG="${UI3344_TAG:-v1.8}"
 BASE="https://github.com/${REPO}/releases/download/${TAG}"
 PKG="ui3344-linux-amd64.tar.gz"
 
