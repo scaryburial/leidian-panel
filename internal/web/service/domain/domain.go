@@ -59,15 +59,19 @@ const (
 
 // Result is the panel-facing snapshot of the domain feature.
 type Result struct {
-	Enabled      bool     `json:"enabled"`
-	FQDN         string   `json:"fqdn"`
-	RootDomain   string   `json:"rootDomain"`
-	ServerIP     string   `json:"serverIp"`
-	CertMode     string   `json:"certMode"` // "" | "origin-ca" | "self-signed"
-	CertPath     string   `json:"certPath"`
-	Proxied      bool     `json:"proxied"`
-	CFConfigured bool     `json:"cfConfigured"`
-	Steps        []string `json:"steps,omitempty"`
+	Enabled      bool   `json:"enabled"`
+	FQDN         string `json:"fqdn"`
+	RootDomain   string `json:"rootDomain"`
+	ServerIP     string `json:"serverIp"`
+	CertMode     string `json:"certMode"` // "" | "origin-ca" | "self-signed"
+	CertPath     string `json:"certPath"`
+	Proxied      bool   `json:"proxied"`
+	CFConfigured bool   `json:"cfConfigured"`
+	// OtpConfigured 暴露「TOTP 密钥是否已设置」这个布尔量（不泄露密钥本身）。
+	// 面板据此决定是渲染「先去设置密钥」的引导卡片，还是直接要求动态码——
+	// 此前前端拿不到这个信息，只能一律要求 6 位码，而密钥为空时任何码都过不了。
+	OtpConfigured bool     `json:"otpConfigured"`
+	Steps         []string `json:"steps,omitempty"`
 
 	// 优选域名：已内置的优选域名数量与内容，以及本次操作的提示/警告。
 	PreferredCount    int              `json:"preferredCount"`
@@ -139,6 +143,7 @@ func (m *Manager) snapshot(st storedState) Result {
 		CertPath:         st.CertPath,
 		Proxied:          st.Proxied,
 		CFConfigured:     strings.TrimSpace(m.settingService.GetCFApiToken()) != "",
+		OtpConfigured:    m.OtpConfigured(),
 		PreferredCount:   len(st.PreferredDomains),
 		PreferredDomains: st.PreferredDomains,
 		PanelPort:        m.panelPortForDisplay(st),
@@ -212,6 +217,25 @@ func (m *Manager) Authorize(code string) bool {
 	return totp.Verify(m.settingService.GetDomainOtpSecret(), code)
 }
 
+// 「没设密钥」和「码错了」是完全不同的两件事，但此前返回同一句
+// 「动态码校验失败（TOTP）」。空密钥时 totp.Verify 恒为 false，于是全新安装
+// （没有内置密钥）的用户无论输什么都会看到同一句话，根本无从知道要先去设置密钥。
+var (
+	ErrOtpNotConfigured = errors.New("尚未设置 TOTP 密钥：请先在「域名」页设置密钥并在验证器中绑定，之后才能授权")
+	ErrOtpInvalid       = errors.New("动态码校验失败（TOTP）")
+)
+
+// AuthorizeError 与 Authorize 判定完全相同，只是把失败原因分开报告。
+func (m *Manager) AuthorizeError(code string) error {
+	if !m.OtpConfigured() {
+		return ErrOtpNotConfigured
+	}
+	if !m.Authorize(code) {
+		return ErrOtpInvalid
+	}
+	return nil
+}
+
 // OtpConfigured reports whether a TOTP secret is already stored. It lets the
 // secret be set once without a code (nothing to verify yet) while every later
 // replacement must present the current code — otherwise a stolen session could
@@ -223,8 +247,8 @@ func (m *Manager) OtpConfigured() bool {
 // Enable performs the full flow. totpCode gates the operation; subdomain is
 // optional (empty → a random one).
 func (m *Manager) Enable(ctx context.Context, subdomain, totpCode string) (Result, error) {
-	if !m.Authorize(totpCode) {
-		return m.snapshot(m.state()), errors.New("动态码校验失败（TOTP）")
+	if err := m.AuthorizeError(totpCode); err != nil {
+		return m.snapshot(m.state()), err
 	}
 	token := strings.TrimSpace(m.settingService.GetCFApiToken())
 	if token == "" {
@@ -331,8 +355,8 @@ func (m *Manager) Enable(ctx context.Context, subdomain, totpCode string) (Resul
 // and clears all state. The certificate files are left on disk. It is gated by
 // the same TOTP code as Enable.
 func (m *Manager) Disable(ctx context.Context, totpCode string) (Result, error) {
-	if !m.Authorize(totpCode) {
-		return m.snapshot(m.state()), errors.New("动态码校验失败（TOTP）")
+	if err := m.AuthorizeError(totpCode); err != nil {
+		return m.snapshot(m.state()), err
 	}
 	st := m.state()
 	if token := strings.TrimSpace(m.settingService.GetCFApiToken()); token != "" && st.RecordID != "" {

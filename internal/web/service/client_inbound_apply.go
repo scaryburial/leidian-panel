@@ -19,6 +19,19 @@ import (
 	"gorm.io/gorm"
 )
 
+// hotApplyCapable 报告某个协议能否通过 xray 的 gRPC 接口热增删用户。
+//
+// 不能的协议必须在改动后请求一次完整重载，否则会出现「数据库改了、运行中的内核
+// 没改、也没有人要求重载」的静默分叉（AddUser 对这种协议返回 nil，调用方无从分辨）。
+// mtproto / amneziawg / tuic 有各自的专用应用路径，在上层分支里处理，不经过这里。
+func hotApplyCapable(p model.Protocol) bool {
+	switch p {
+	case model.VMESS, model.VLESS, model.Trojan, model.Shadowsocks, model.Hysteria, model.WireGuard:
+		return true
+	}
+	return false
+}
+
 func sameClientConfigExceptUpdatedAt(a, b map[string]any) bool {
 	aa := maps.Clone(a)
 	bb := maps.Clone(b)
@@ -575,6 +588,14 @@ func (s *ClientService) AddInboundClient(inboundSvc *InboundService, data *model
 			inboundSvc.applyLocalAmneziaWG(oldInbound.Id)
 		} else if oldInbound.Protocol == model.TUIC {
 			inboundSvc.applyLocalTuic(oldInbound.Id)
+		} else if !hotApplyCapable(oldInbound.Protocol) {
+			// 这个协议在 xray 里没有可用的 gRPC 账号形态（tunnel/http/mixed 等），
+			// rt.AddUser 会**静默返回 nil**（见 internal/xray/api.go 的 default 分支），
+			// 于是调用方以为已经生效、needRestart 保持 false，而运行中的内核永远
+			// 不会拿到这个客户端——数据库与运行态就这么永久分叉了。
+			// 无法证明已生效时，唯一可靠的做法是重建配置。
+			logger.Debug("Protocol", oldInbound.Protocol, "has no hot-apply path; scheduling restart")
+			needRestart = true
 		} else {
 			for _, client := range clients {
 				if len(client.Email) == 0 {

@@ -310,10 +310,32 @@ func (p *Process) GetConfig() *Config {
 // SetConfig replaces the stored configuration snapshot after the running
 // process has been reconciled with it through the gRPC API (hot apply), so
 // later change detection compares against what is actually running.
+//
+// The snapshot is **also written back to config.json**. Hot apply never went
+// through Start(), so previously the file on disk kept showing whatever the
+// core was started with — long after the running core had moved on. That made
+// the on-disk file actively misleading: an operator (or anyone debugging)
+// reads config.json, sees a client missing, and concludes the change was lost,
+// while the running core had in fact accepted it. Keeping the file in sync
+// costs one atomic write per hot apply and removes that whole class of
+// misdiagnosis.
 func (p *Process) SetConfig(config *Config) {
 	p.mu.Lock()
-	defer p.mu.Unlock()
 	p.config = config
+	configPath := p.configPath
+	p.mu.Unlock()
+
+	if configPath == "" {
+		configPath = GetConfigPath()
+	}
+	data, err := json.MarshalIndent(config, "", "  ")
+	if err != nil {
+		logger.Warning("hot apply: marshal config for disk failed: ", err)
+		return
+	}
+	if err := writeFileAtomic(configPath, data, 0o600); err != nil {
+		logger.Warning("hot apply: refresh config.json failed: ", err)
+	}
 }
 
 // GetOnlineClients returns the union of locally-online clients and

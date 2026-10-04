@@ -88,8 +88,8 @@ func (a *DomainController) setToken(c *gin.Context) {
 		jsonMsg(c, "参数错误："+err.Error(), err)
 		return
 	}
-	if !a.domainService.Authorize(req.Totp) {
-		jsonMsg(c, "动态码校验失败（TOTP）", nil)
+	if err := a.domainService.AuthorizeError(req.Totp); err != nil {
+		jsonMsg(c, err.Error(), nil)
 		return
 	}
 	if err := a.settingService.SetCFApiToken(req.Token); err != nil {

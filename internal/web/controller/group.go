@@ -148,6 +148,11 @@ func (a *GroupController) bulkAdd(c *gin.Context) {
 		return
 	}
 	jsonObj(c, gin.H{"affected": affected}, nil)
+	// 与同族的 bulkRemove / rename / delete 对齐：AddToGroup 会重写每个入站
+	// settings.clients[].group，配置快照变了就要标记重载。group 本身是面板字段、
+	// xray 会忽略未知键，所以危害不大，但少一次 flag 就让"改了配置却不生效"
+	// 这类问题少一个入口。
+	a.xrayService.SetToNeedRestart()
 	notifyClientsChanged()
 }
 

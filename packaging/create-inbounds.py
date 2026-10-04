@@ -111,6 +111,27 @@ def tls_selfsigned():
     })
 
 
+# 安全档的传输改成了 WebSocket + TLS，而不是裸 TCP + TLS。
+#
+# 原因：裸 TCP 无法被 Cloudflare 代理（CF 只转发 HTTP/WebSocket），所以那条入站
+# 即使启用了域名、换上了域名证书，客户端**依然连不上**——它只能靠直连 IP，而直连
+# 时用的是自签/Origin CA 证书，Xray 26 又移除了 allowInsecure，客户端一律拒绝。
+# 换成 WS + TLS 后，启用域名时它会被域名功能一起改写成「域名证书 + CF 可代理」，
+# 于是和 2087 一样走 Cloudflare 正常工作。
+def ws_tls_selfsigned(path):
+    return json.dumps({
+        "network": "ws", "security": "tls",
+        "tlsSettings": {
+            "serverName": "ui3344", "minVersion": "1.2", "maxVersion": "1.3", "cipherSuites": "",
+            "rejectUnknownSni": False, "allowInsecure": False,
+            "certificates": [{"certificateFile": TLS_CERT + "/fullchain.pem", "keyFile": TLS_CERT + "/privkey.pem",
+                              "ocspStapling": 0, "oneTimeLoading": False, "usage": "encipherment", "buildChain": False}],
+            "alpn": list(TLS_ALPN),
+        },
+        "wsSettings": {"path": path, "host": "", "headers": {}},
+    })
+
+
 def reality(priv, pub, sid):
     return json.dumps({
         "network": "tcp", "security": "reality",
@@ -378,6 +399,7 @@ def main():
     ws_stream = ws("/ui3344ws")
     vmess_ws_stream = ws("/ui3344vm")
     tls_stream = tls_selfsigned() if has_cert else None
+    ws_tls_stream = ws_tls_selfsigned("/ui3344tls") if has_cert else None
     reality_stream = reality(priv, pub, sid) if (priv and pub) else None
     speed_stream = reality(priv2, pub2, sid2) if (priv2 and pub2) else TCP_NONE
     if speed_stream is TCP_NONE:
@@ -388,7 +410,7 @@ def main():
         # ws: flow must stay empty -- Vision cannot ride a WebSocket transport.
         inbound("VLESS-综合-WS-2087", 2087, "vless", vless_settings("vless-ws", ws_stream), ws_stream),
         inbound("VMess-速度-8080", 8080, "vmess", vmess_settings("vmess-speed"), TCP_NONE),
-        *([inbound("VMess-安全-TLS-2053", 2053, "vmess", vmess_settings("vmess-tls"), tls_stream)] if has_cert else []),
+        *([inbound("VMess-安全-TLS-2053", 2053, "vmess", vmess_settings("vmess-tls"), ws_tls_stream)] if ws_tls_stream else []),
         inbound("VMess-综合-WS-2052", 2052, "vmess", vmess_settings("vmess-ws"), vmess_ws_stream),
         # 速度档也用 aes-256-gcm，不再是 aes-128。
         #
