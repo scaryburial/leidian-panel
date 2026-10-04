@@ -1,0 +1,60 @@
+========================================================================
+ 雷电面板 (ui3344) 一键在线安装 -- 桌面实况窗口输出存档
+ 执行时间: 2026-10-04 08:54:47 -> 08:55:57  (耗时 1 分 10 秒)
+ 执行命令: ssh -t srv154 "bash <(curl -fsSL https://raw.githubusercontent.com/
+scaryburial/leidian-panel/main/install.sh)"
+ 目标主机: root@154.12.82.50 (Debian GNU/Linux 12)
+ install.sh sha256: 2b6d0dee2db30d07b124f5ca3581bcf251ee400da9d1e8d8127c0f8ecf6470e9
+ 结果: ssh 退出码 0
+========================================================================
+
+  ==================================================================
+   雷电面板 (ui3344) 一键在线安装  --  实况窗口
+  ==================================================================
+   目标主机 : root@154.12.82.50   (Debian GNU/Linux 12)
+   本窗口执行的命令 (原样):
+
+     ssh -t srv154 "bash <(curl -fsSL https://raw.githubusercontent.com/scaryburial/leidian-panel/main/install.sh)"
+
+   install.sh sha256 (本机=服务器, 已比对一致):
+     2b6d0dee2db30d07b124f5ca3581bcf251ee400da9d1e8d8127c0f8ecf6470e9
+
+  ------------------------------------------------------------------
+> 下载安装包（https://github.com/scaryburial/leidian-panel/releases/download/v1.7）…
+  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
+                                 Dload  Upload   Total   Spent    Left  Speed
+  0     0    0     0    0     0      0      0 --:--:-- --:--:-- --:--:--     0
+100  127M  100  127M    0     0  2285k      0  0:00:57  0:00:57 --:--:-- 2329k
+  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
+                                 Dload  Upload   Total   Spent    Left  Speed
+  0     0    0     0    0     0      0      0 --:--:-- --:--:-- --:--:--     0
+100   111  100   111    0     0    123      0 --:--:-- --:--:-- --:--:--   123
+> sha256 校验通过（83aed7b4813f518141b86f36931416d5bff168e207c3b6f9d56822fae2526147）
+> 解压并安装…
+> 停止旧服务(如有)…
+> 安装文件到 /usr/local/ui3344 …
+> 安装 systemd 服务…
+> ui3344 服务已启动
+> 创建预设协议(9 个入站)…
+ui3344 presets: created=9 skipped=0 failed=0
+> 配置订阅服务(Clash/JSON + 内置分流规则)…
+configure-subscription: applied 6 settings
+========================================
+ 安装完成
+ 管理命令 : ui3344
+ 端口     : 33441
+ 安全入口 : /ui3344/
+ 访问地址 : http://<服务器IP>:33441/ui3344/
+ 默认账号 : 3344 / 3344 （请登录后尽快改强）
+========================================
+> 确保预设协议…
+ui3344 presets: created=0 skipped=9 failed=0
+
+安装完成。访问： http://<服务器IP>:33441/ui3344/ （默认 3344 / 3344，请尽快改强）
+Connection to 154.12.82.50 closed.
+
+  ------------------------------------------------------------------
+  [ssh 退出码: 0    耗时: 00:01:10]
+  [窗口内容已被完整抓取并保存为本文件]
+
+  按 Enter 关闭此窗口:

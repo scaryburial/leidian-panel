@@ -1,0 +1,213 @@
+# 雷电面板（ui3344）开发者接手文档
+
+> 给"第二个开发者"的完整交接说明：源码来源、改了什么、需求是什么、怎么构建/打包/安装/二次开发。看完本文 + 同目录其余文档即可直接接手。
+
+---
+
+## 0. 这是什么 · 源码来源
+
+- **上游**：`https://github.com/MHSanaei/3x-ui`（开源 Xray 面板 3x-ui，GPL-3.0；其前身为 X-UI 系）。
+- **本仓库**：3x-ui 的**私用定制分支**，更名为「雷电面板」，命令/服务/路径统一为 `ui3344`。
+- **去向**：未推送到任何远程（`origin` 仍指向上游但**未 push**）。所有改动都在本地 git 历史里。
+- **许可**：遵循上游 GPL-3.0；再分发请保留许可与声明。
+
+---
+
+## 1. 原始需求清单（用户提出）
+
+1. 登录页背景换成雷电将军图
+2. 面板主界面用狐妖小红娘动漫图轮换
+3. 面板改名「雷电面板」
+4. 去掉 GitHub 等上游身份；检查并杜绝隐私收集
+5. 默认账号密码 3344、端口 33441、安全入口 `/ui3344/`
+6. 终端命令改为 `ui3344`
+7. SSH 终端交互界面中文化
+8. 路径/文件名/服务名也改为 `ui3344`
+9. Xray 版本切换列表不为空（内置、离线）
+10. 面板显示客户端 IP **归属地**（精确，避免上海判成湖南）；一键查
+11. 每客户端限速 + 最大并发连接数（**暂缓**：Xray 无原生支持）
+12. 安装方式：自建发布包 + 本地安装
+13. 改动提交到本地 git、整理需求与变更历史
+14. 生成安装包 + 说明/使用文档
+15. 面板**更透明**（看见背景图）
+16. 左侧边栏更**科技/美观**
+17. 安装后**自带主流协议**（VLESS/VMess/SS2022 × 速度/安全/综合）
+
+---
+
+## 2. 目录与关键文件
+
+- `frontend/` 前端（React 19 + Ant Design 6 + Vite 8 + TS）
+  - `src/pages/login/`、`src/layouts/`（含 `PanelLayout.tsx`、`PanelBackground.tsx/.css`、`AppSidebar.tsx/.css`）
+  - `src/styles/page-shell.css`、`src/lib/clients/ip-log.ts`、`src/pages/clients/*`
+  - `src/assets/` 背景图；`public/manifest.webmanifest`；`login.html`
+- `internal/`
+  - `config/`（`name` 文件=ui3344、路径默认值）、`logger/`、`database/`
+  - `ipgeo/`（**新增**：离线 IP 归属地，内置 `ip2region.xdb`）
+  - `web/service/`（`server.go`、`setting.go`、`panel/`、`cores/`+`xray_cores.go`+`xray_versions.go` **新增**）
+  - `web/controller/`、`web/translation/*`（13 语言）
+- 根目录：`main.go`、`ui3344.sh`（中文菜单，原 x-ui.sh）、`ui3344.service.{debian,arch,rhel}`、`ui3344.rc`、`build-release.sh`（打包）、`install.sh`（上游的，本分支**不再使用**）
+- `packaging/`：`install.sh`（本地安装器）、`create-inbounds.py`（协议预设创建）、`README.md`
+- 文档：`定制说明.md`、`雷电面板-项目说明与注意事项.md`、`雷电面板-使用说明.md`、`雷电面板-协议与端口说明.md`、本文件
+
+---
+
+## 3. 环境与构建
+
+**构建机依赖**：Go **1.27.1**、Node **24**、gcc、make、unzip、python3、openssl。
+（本项目的服务器为 Debian 12 x86_64。）
+
+**构建 + 打包（一条命令）**：
+```bash
+bash build-release.sh
+# 产物：dist/ui3344-linux-amd64.tar.gz（约 128MB，含二进制/脚本/服务文件/默认内核/geo）
+```
+`build-release.sh` 做四件事：`npm run build`（前端）→ `go build`（后端，嵌入前端 dist、3 个内核、ip2region）→ 组装 `ui3344/` 目录 → 打包 + sha256。
+
+**安装**（目标机需 root）：
+```bash
+tar xzf ui3344-linux-amd64.tar.gz && cd ui3344 && bash install.sh
+```
+安装器会：装到 `/usr/local/ui3344`、写 `/usr/bin/ui3344`、注册启动 `ui3344.service`、生成自签证书、**自动创建 9 个预设协议**。
+
+**卸载**：见《使用说明》§五。
+
+---
+
+## 4. 已实现功能明细
+
+- **品牌**：显示名「雷电面板」（登录页/侧边栏/标题/PWA/命令面板/2FA 发行方）；移除上游链接。
+- **背景**：登录页=雷电将军；面板=狐妖小红娘 6 图轮换（6s 交叉淡入淡出）；透明度**较高**（遮罩约 0.18、卡片半透明 64% + 毛玻璃）。
+- **侧边栏**：玻璃拟态 + 渐变品牌字 + 圆角菜单项 + 选中高亮/发光（见 `AppSidebar.css` 末尾 “ui3344 custom sidebar”）。
+- **改名 ui3344**：命令、systemd/openrc 服务、`/usr/local|etc|var/log/ui3344`、DB `ui3344.db`、环境文件、资产名。
+- **终端菜单中文化**：`ui3344.sh` 全部菜单/提示/状态。
+- **默认值**：`3344/3344`、端口 `33441`、入口 `/ui3344/`（`setting.go`/`db.go`/`main.go`）。
+- **隐私**：关闭公网 IP 探测、面板更新检查、Xray 版本列表联网；前端移除上游外链。（保留：内核/Geo 等按需下载。）
+- **Xray 内核离线切换**：内置 `v26.9.9/v25.12.2/v25.6.7`（`internal/web/service/cores/*.zip` + `xray_cores.go`），切内核不联网。
+- **IP 归属地**：`internal/ipgeo`（离线 ip2region）+ 客户端列表「在线 IP/归属地」列 + IP 弹窗 + 接口 `POST /panel/api/server/ipGeo`。
+
+---
+
+## 5. 协议预设（安装自动创建）
+
+- 由 `packaging/create-inbounds.py` 创建（安装器调用；幂等，已存在则跳过）。
+- 9 个入站：VLESS/VMess/SS2022 各 **速度/安全/综合**；详见《雷电面板-协议与端口说明.md》。
+- 手动重建：`UI3344_URL=http://127.0.0.1:33441/ui3344 python3 packaging/create-inbounds.py`
+- 要点：SS2022 多用户**仅支持 aes-*-gcm**（chacha20 会导致 Xray 启动失败）；客户端 email 需全局唯一；VMess-TLS 用 `/root/cert/ui3344-selfsigned` 自签证书。
+
+---
+
+## 6. git 历史
+
+- `aee97ce9` 定制：更名雷电面板/ui3344 + 去上游外联 + 默认3344 + 内核离线切换 + 客户端IP归属地 + 本地安装包
+- `1e2c0133` feat(ui,protocols)：面板透明度适中 + 配齐 9 个入站
+- （后续提交：更高透明度 + 侧边栏美化 + 安装自动带协议）
+
+> 提交时 husky 的 `oxlint` 会崩溃（工具自身 bug），需 `HUSKY=0 git commit ...`。
+
+---
+
+## 7. 已知问题 / 注意事项
+
+1. **默认密码 `3344/3344` 是弱口令**，务必改强；建议改入口 + 配 SSL。
+2. **`go test` 的 `TestRouteRegistryContract` 会失败**：因为默认安全入口是 `/ui3344/`，测试按 `/panel/api` 匹配不到（真机运行正常）。若要它变绿，需调整该测试预期。
+3. **升级不要用 `ui3344 update`**（指向上游）；升级=用新本地包重跑 `install.sh`（数据保留）。
+4. **端口放行**：`443 8443 8080 2053 2052 2087 8388 8389 8390` + 面板 `33441`。
+5. **VMess-TLS 自签**：客户端需勾选"允许不安全/跳过证书校验"。
+6. **Reality 伪装目标**：默认 `www.apple.com`（`UI3344_SNI` 可改）。
+7. **`.github/` 与 `deploy/`** 仍是 `x-ui` 名称（非运行时）。
+8. **DB**：`/etc/ui3344/ui3344.db`，与上游 `/etc/x-ui/x-ui.db` 不同，不会自动接管旧数据。
+
+---
+
+## 8. 二次开发流程
+
+- **改前端**：改 `frontend/src/...` → `cd frontend && npm run build`（或直接 `bash build-release.sh`）。
+- **改后端**：改 `internal/...` → `bash build-release.sh`（会一起构建打包）。
+- **本地验证**：`cd dist/ui3344 && bash install.sh`（重装、数据保留）。
+- **提交**：`HUSKY=0 git add -A && HUSKY=0 git commit -m "..."`。
+- **分发**：把 `dist/ui3344-linux-amd64.tar.gz`（+ `.sha256`）与文档上传到你的网盘/仓库。
+
+---
+
+## 9. 分发（坚果云 WebDAV）
+本分支源码、发布包与文档已上传到坚果云（WebDAV：`https://dav.jianguoyun.com/dav/`，目录见上传说明）。他人拿到后可：
+1. 解压发布包 → `bash install.sh`（装完即含 9 个协议）；
+2. 若要继续开发，用源码包 + `build-release.sh` 重新构建。
+---
+
+## 10. v1.7 变更（更新功能 · 订阅修复 · 多架构构建）
+
+> 本节记录 v1.7 相对 v1.6 的全部改动，便于后来的人接手。改动共 8 个文件，均为 Go 后端 / 前端 TS / 中文语言包。
+
+### 10.1 版本号不再显示上游版本
+
+- **现象**：界面一直显示上游 3x-ui 的 `v3.7.0`，不是本 fork 的版本。
+- **原因**：`internal/config/config.go` 的 `GetPanelVersion()` 返回嵌入文件 `internal/config/version`（内容就是上游 `3.7.0`）。
+- **改法**：改为优先返回构建时注入的 `uiVersion`（本 fork 的发布标签，如 `v1.7`），未注入时才回退上游版本。
+- **影响文件**：`internal/config/config.go`
+
+### 10.2 首页「更新面板」入口 + 一键自更新
+
+- **现象**：更新能力其实写好了，但被掐断 —— `panel.StartUpdate()` / `StartUpdateChannel()` 直接返回 `panel self-update is disabled`；首页也找不到明显入口。
+- **改法**：
+  1. 恢复 `StartUpdate()` / `StartUpdateChannel()`，转调内部 `startUpdate(useDev)`；
+  2. 首页操作栏最右侧新增「更新面板」按钮（检测到新版本时主色高亮）；
+  3. 更新弹窗主按钮改为一键自动更新（`POST /panel/api/server/updatePanel`），另保留「下载新版本」链接跳转 Release 页面。
+- **自更新链路**：`panelUpdaterURL = https://raw.githubusercontent.com/scaryburial/leidian-panel/main/update.sh`（**已指向本仓库**，不会再执行上游代码）；脚本下载后由 `systemd-run` 以 root 运行，结果写到 `/etc/ui3344/update-status.json`，前端轮询 `/panel/api/server/getUpdateStatus`。
+- **影响文件**：`internal/web/service/panel/panel.go`、`frontend/src/pages/index/OverviewActionBar.tsx`、`frontend/src/pages/index/PanelUpdateModal.tsx`、`internal/web/translation/zh-CN.json`
+- **相关设置**：`panelUpdateCheckEnable`（默认 `true`）、`panelUpdateRepo`（默认 `scaryburial/leidian-panel`）。
+
+> ⚠️ **注意（v1.7 修复）**：`update.sh` 原本有 **9 处**地址仍指向上游 `MHSanaei/3x-ui`（取最新 tag、下载安装包与 .sha256、下载 `ui3344.sh`/`ui3344.rc`/service 文件）。**如果不改，用户点「更新面板」会去装原版 3x-ui，所有中文定制/预设协议/域名功能全部丢失。** v1.7 已把这 9 处全部改为 `scaryburial/leidian-panel`。今后再动更新链路，务必 `grep -n 'MHSanaei/3x-ui' update.sh` 复查一遍。
+
+### 10.3 修复：更新提示永远误报
+
+- **现象**：当前版本 `v1.7`，却提示「更新 v1.6」。
+- **原因**：版本比较只接受三段式 `MAJOR.MINOR.PATCH`，而历史发布标签是两段式（`v1.6`），解析失败后 `isNewerVersion` 退化成字符串比对，`"1.6" != "1.7"` 即判为有新版本。
+- **改法**：`parseVersionParts` 放宽为任意段数，比较时缺位按 0 补齐；Go 与前端镜像（`panel-version.ts`）同步修改。
+- **影响文件**：`internal/web/service/panel/panel.go`、`frontend/src/lib/panel-version.ts`
+
+### 10.4 修复：启用域名后订阅链接不可用（用户实测反馈）
+
+- **现象**：开启「域名」功能后，客户端导入订阅链接连不上。
+- **两个根因**：
+  1. **订阅基址是 http，而 Cloudflare 把 2096 当 HTTPS 端口**：`setting.go` 的 `BuildSubURIBase` 只有同时配置 `subCertFile` + `subKeyFile` 才生成 `https://`；而域名功能只写了 `subDomain`，没写订阅证书 → 生成 `http://<域名>:2096/...` → Cloudflare 回源时用 TLS 握手，明文订阅服务被挡回 `400 The plain HTTP request was sent to HTTPS port`。
+  2. **所有节点地址被改写成域名**：`internal/sub/service.go` 的 `SubService.resolveInboundAddress` 在兜底分支无条件返回配置的公共域名；但 Cloudflare 只代理 HTTP(S)/WS，代理不了 Reality / VMess-TCP / Shadowsocks，于是 6 个非 WS 节点导入后全部失效。
+- **改法**：
+  1. `panelswitch.go`：启用域名时同时把订阅服务切到同一张域名证书（`SetSubCertFile`/`SetSubKeyFile`），停用时还原；
+  2. `internal/sub/service.go`：只有真正绑定该域名的入站（`network=ws` 且 `security=tls` 且 `tlsSettings.serverName == 域名`）才广播域名，其余回退到 `domainConfig.ip`（启用域名时记录的服务器公网 IP）。
+- **影响文件**：`internal/web/service/domain/panelswitch.go`、`internal/sub/service.go`
+- **验证结果**：`https://<域名>:2096/<subPath><subId>` 返回 200；订阅里 WS 节点走优选域名，Reality / VMess-TCP / SS2022 共 8 个节点用 `服务器IP:端口`。
+
+### 10.5 修复：域名与 8443 端口冲突时改为「挪端口」而不是「停用」
+
+- **现象**：面板要搬到 Cloudflare 支持的 8443，而预设入站 `VLESS-速度-8443` 正占着它；原实现直接 `enable=false` 停用该入站，用户平白少一个入口。
+- **改法**：`freePortForPanel()` 改为从 8444 起找第一个空闲端口，把该入站挪过去并**保持 `enable=1`**；只有确实找不到空闲端口才退回临时停用。停用域名功能时把端口挪回 8443。
+  - 只改 `port`，不动 `tag` / `remark`：`tag` 会被路由规则和「中转 / 反向代理」的 `scope=inbounds` 引用，改掉会连带破坏那些配置。
+- **影响文件**：`internal/web/service/domain/panelswitch.go`
+- **已知副作用**：被挪动的入站 `remark` 仍写着旧端口（例如 `VLESS-速度-8443` 实际在 8444）。因为 `create-inbounds.py` 是按 remark 幂等跳过的，不会重复创建入站，只是名字会误导。
+- **验证结果**：启用域名后入站为 `port=8444, enable=1`，9 个入站全部启用。
+
+### 10.6 多架构构建（不再只有 x86）
+
+仓库根目录新增 `build-all-arch.sh`，一次产出：
+
+- `dist/ui3344-linux-amd64.tar.gz`
+- `dist/ui3344-linux-arm64.tar.gz`
+- `dist/ui3344-source.tar.gz`
+
+要点：
+
+1. 前端只构建一次，两个架构复用；
+2. 数据库驱动 `mattn/go-sqlite3` 用到 cgo（`SQLiteConn.Backup`），**不能**用 `CGO_ENABLED=0`；arm64 交叉编译需要 `apt-get install gcc-aarch64-linux-gnu libc6-dev-arm64-cross`（只装前者会缺 `bits/wordsize.h` 而编译失败）；
+3. 每个架构必须放**对应架构**的 Xray 内核到 `bin/xray-linux-<arch>`（原 `build-release.sh` 只放 amd64，arm64 机器上会起不来）；
+4. 压缩包顶层目录必须叫 `ui3344`，否则官方一键安装脚本里的 `tar xzf ... && cd ui3344` 会失败。
+
+注意：内置离线内核切换（`internal/web/service/cores/*.zip`）只有 amd64 版本，`xray_cores.go` 用 `runtime.GOARCH` 做了保护，非 amd64 不会启用离线切换（会退化为联网下载）。
+
+### 10.7 仍未做（建议 v1.8）
+
+1. **2053（VMess-安全-TLS）开箱不可用**：自签证书 `CN=ui3344` 且没有 SAN，订阅链接里也没有 `allowInsecure` / pin → 客户端握手失败。修法二选一：给 2053 换绑域名证书，或在订阅里补 `verifyPeerCertByName` / pin。
+2. **启用域名后旧的 IP 订阅链接失效**：`internal/sub/sub.go` 会在 `subDomain` 非空时挂 `DomainValidatorMiddleware`，而该中间件要求 hostname **全等** `subDomain`，所以 `Host: <IP>:2096` 一律 403；同时订阅服务已改成 TLS，明文也进不来。建议放宽为「域名或服务器 IP 都接受」。
+3. **清装 / 卸载不回收 Cloudflare DNS 记录**：卸载面板不会删除启用域名时创建的 A 记录，会在 zone 里留下孤儿记录。
+4. **安装脚本的 `/tmp` 残留**：在线安装脚本用 `mktemp -d` 解包后没有 trap 清理，会在 `/tmp` 留下约 400MB（安装包 + 解包目录）。

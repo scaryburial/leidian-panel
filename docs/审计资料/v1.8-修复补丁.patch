@@ -1,0 +1,1142 @@
+warning: in the working copy of 'packaging/create-inbounds.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'packaging/domain-setup.py', LF will be replaced by CRLF the next time Git touches it
+diff --git a/internal/sub/sub.go b/internal/sub/sub.go
+index e6596ea..48c2c8e 100644
+--- a/internal/sub/sub.go
++++ b/internal/sub/sub.go
+@@ -5,6 +5,7 @@ package sub
+ import (
+ 	"context"
+ 	"crypto/tls"
++	"encoding/json"
+ 	"io"
+ 	"io/fs"
+ 	"net"
+@@ -45,6 +46,28 @@ func NewServer() *Server {
+ 	}
+ }
+ 
++// subAllowedHosts returns every host name the subscription server should answer
++// for: the configured domain plus the server IP that the domain feature recorded
++// when it was enabled (domainConfig.ip). The IP is what the panel used as the
++// node address for every non-WS inbound, so it must stay reachable.
++func subAllowedHosts(subDomain string, settings service.SettingService) []string {
++	hosts := []string{subDomain}
++	raw, err := settings.GetDomainConfig()
++	if err != nil || strings.TrimSpace(raw) == "" {
++		return hosts
++	}
++	var st struct {
++		IP string `json:"ip"`
++	}
++	if err := json.Unmarshal([]byte(raw), &st); err != nil {
++		return hosts
++	}
++	if ip := strings.TrimSpace(st.IP); ip != "" {
++		hosts = append(hosts, ip)
++	}
++	return hosts
++}
++
+ // initRouter configures the subscription server's Gin engine, middleware,
+ // templates and static assets and returns the ready-to-use engine.
+ func (s *Server) initRouter() (*gin.Engine, error) {
+@@ -61,7 +84,11 @@ func (s *Server) initRouter() (*gin.Engine, error) {
+ 	}
+ 
+ 	if subDomain != "" {
+-		engine.Use(middleware.DomainValidatorMiddleware(subDomain))
++		// Accept the domain *and* the server IP recorded by the domain feature.
++		// Subscription URLs handed out before the domain existed use the IP, and
++		// those links are already stored in clients (and in the Android app), so
++		// validating the domain alone turned every one of them into a 403.
++		engine.Use(middleware.DomainValidatorMiddleware(subAllowedHosts(subDomain, s.settingService)...))
+ 	}
+ 
+ 	LinksPath, err := s.settingService.GetSubPath()
+diff --git a/internal/web/middleware/domainValidator.go b/internal/web/middleware/domainValidator.go
+index 1e1ca6a..9e41174 100644
+--- a/internal/web/middleware/domainValidator.go
++++ b/internal/web/middleware/domainValidator.go
+@@ -10,18 +10,39 @@ import (
+ 	"github.com/gin-gonic/gin"
+ )
+ 
+-// DomainValidatorMiddleware returns a Gin middleware that validates the request domain.
+-// It extracts the host from the request, strips any port number, and compares it
+-// against the configured domain. Requests from unauthorized domains are rejected
+-// with HTTP 403 Forbidden status.
+-func DomainValidatorMiddleware(domain string) gin.HandlerFunc {
+-	return func(c *gin.Context) {
+-		host := c.Request.Host
+-		if colonIndex := strings.LastIndex(host, ":"); colonIndex != -1 {
+-			host, _, _ = net.SplitHostPort(c.Request.Host)
+-		}
++// normalizeRequestHost lowercases the request host and strips the port (and the
++// IPv6 brackets and a trailing root dot), so that "1.2.3.4:2096", "[::1]:2096",
++// "example.com." and "example.com" can all be compared against a plain hostname
++// / IP allow-list.
++func normalizeRequestHost(raw string) string {
++	host := strings.TrimSpace(raw)
++	if h, _, err := net.SplitHostPort(host); err == nil {
++		host = h
++	}
++	host = strings.Trim(host, "[]")
++	host = strings.TrimSuffix(host, ".")
++	return strings.ToLower(host)
++}
+ 
+-		if host != domain {
++// DomainValidatorMiddleware returns a Gin middleware that validates the request
++// host against an allow-list. Requests from any other host are rejected with
++// HTTP 403 Forbidden.
++//
++// It accepts several allowed hosts on purpose: once the domain feature is on,
++// the subscription service serves TLS with the domain certificate, and clients
++// that were handed an "http(s)://<server-ip>:<sub-port>/..." subscription URL
++// (the form the panel advertises before the domain exists, and the form already
++// stored in clients) must keep working. Accepting only the domain silently
++// turned every pre-existing IP subscription into a 403.
++func DomainValidatorMiddleware(allowed ...string) gin.HandlerFunc {
++	allow := make(map[string]bool, len(allowed))
++	for _, a := range allowed {
++		if a = strings.ToLower(strings.TrimSpace(a)); a != "" {
++			allow[a] = true
++		}
++	}
++	return func(c *gin.Context) {
++		if !allow[normalizeRequestHost(c.Request.Host)] {
+ 			c.AbortWithStatus(http.StatusForbidden)
+ 			return
+ 		}
+diff --git a/internal/web/service/client_crud.go b/internal/web/service/client_crud.go
+index 0a5eaa4..bf06416 100644
+--- a/internal/web/service/client_crud.go
++++ b/internal/web/service/client_crud.go
+@@ -477,6 +477,27 @@ func validShadowsocksClientKey(method, key string) bool {
+ 	return len(decoded) == n
+ }
+ 
++// settingsClientPassword 取入站 settings 里某个 email 的客户端密钥。
++//
++// 用途：clients 表一个客户端只有一个 password，把它同时挂到 aes-128 与 aes-256
++// 两条 Shadowsocks-2022 入站上时，config 生成阶段必须挑一个长度正确的密钥，而
++// 入站 settings 里的那个正是订阅已经下发的——优先沿用它，客户端才不会失联。
++func settingsClientPassword(settings map[string]any, email string) string {
++	clients, _ := settings["clients"].([]any)
++	want := strings.TrimSpace(email)
++	for _, raw := range clients {
++		c, ok := raw.(map[string]any)
++		if !ok {
++			continue
++		}
++		if e, _ := c["email"].(string); strings.EqualFold(strings.TrimSpace(e), want) {
++			pw, _ := c["password"].(string)
++			return pw
++		}
++	}
++	return ""
++}
++
+ func shadowsocksKeyBytes(method string) int {
+ 	switch method {
+ 	case "2022-blake3-aes-128-gcm":
+diff --git a/internal/web/service/domain/domain.go b/internal/web/service/domain/domain.go
+index 1652f22..cb94e37 100644
+--- a/internal/web/service/domain/domain.go
++++ b/internal/web/service/domain/domain.go
+@@ -32,6 +32,8 @@ import (
+ 	"github.com/mhsanaei/3x-ui/v3/internal/database/model"
+ 	"github.com/mhsanaei/3x-ui/v3/internal/util/totp"
+ 	"github.com/mhsanaei/3x-ui/v3/internal/web/service"
++
++	"gorm.io/gorm"
+ )
+ 
+ const (
+@@ -41,6 +43,18 @@ const (
+ 	// ws inbounds the domain feature rewrites to WS+TLS on the subdomain.
+ 	wsVLESSRemark = "VLESS-综合-WS-2087"
+ 	wsVMessRemark = "VMess-综合-WS-2052"
++
++	// vmessTLSRemark is the VMess/TCP/TLS preset. It ships with a self-signed
++	// certificate (CN=ui3344, and **no SAN at all**), so out of the box every
++	// client fails the handshake unless it is told to skip verification — and
++	// the generated share link does not say that. Once a domain exists we can
++	// simply hand this inbound the real certificate instead.
++	vmessTLSRemark = "VMess-安全-TLS-2053"
++
++	// selfSignedCertDir is where the installer puts the fallback certificate,
++	// and what the VMess/TLS preset is restored to when the domain is disabled.
++	selfSignedCertDir = certRoot + "/ui3344-selfsigned"
++	selfSignedSNI     = "ui3344"
+ )
+ 
+ // Result is the panel-facing snapshot of the domain feature.
+@@ -281,10 +295,8 @@ func (m *Manager) Enable(ctx context.Context, subdomain, totpCode string) (Resul
+ 	if prefErr != nil {
+ 		warnings = append(warnings, "优选域名生成失败："+prefErr.Error())
+ 	}
+-	if n := len(prefRejected); n > 0 {
+-		warnings = append(warnings, fmt.Sprintf(
+-			"已剔除 %d 个未通过 Cloudflare 网段校验的候选域名（失效或已不指向 CF）", n))
+-	}
++	// 被剔除的候选域名（网段校验失败 + 端到端探测失败）连同原因在
++	// res.PreferredRejected 里返回，这里不再重复汇总一句笼统的提示。
+ 
+ 	st := storedState{
+ 		Enabled: true, FQDN: fqdn, IP: ip, RecordID: recordID,
+@@ -371,7 +383,9 @@ func (m *Manager) applyInbounds(fqdn, certDir string) (skipped []string, err err
+ 	for _, remark := range []string{wsVLESSRemark, wsVMessRemark} {
+ 		port, err := inboundPortByRemark(remark)
+ 		if err != nil {
+-			return skipped, err
++			// 预设入站可能被用户删掉了；这是可接受的，不要因此让整个 Enable 失败。
++			skipped = append(skipped, fmt.Sprintf("%s 不存在，已跳过", remark))
++			continue
+ 		}
+ 		if IsCFHTTPOnlyPort(port) {
+ 			skipped = append(skipped, fmt.Sprintf(
+@@ -383,23 +397,100 @@ func (m *Manager) applyInbounds(fqdn, certDir string) (skipped []string, err err
+ 			return skipped, err
+ 		}
+ 	}
++
++	// VMess/TCP/TLS 没有域名也能跑，但它的自签证书 CN=ui3344 且没有任何 SAN，
++	// 客户端必须手动勾「跳过证书校验」才能连上（分享链接里并没有这个开关）。
++	// 既然现在有了覆盖本域名的正规证书，就把它换掉。
++	if err := rewriteTLSCertificate(vmessTLSRemark, fqdn, certDir); err != nil {
++		if errors.Is(err, errInboundNotFound) {
++			skipped = append(skipped, fmt.Sprintf("%s 不存在，已跳过证书替换", vmessTLSRemark))
++		} else {
++			skipped = append(skipped, fmt.Sprintf("%s 证书替换失败：%v", vmessTLSRemark, err))
++		}
++	} else {
++		skipped = append(skipped, fmt.Sprintf(
++			"%s 的 TLS 证书已替换为域名证书（原来是无 SAN 的自签证书，客户端必然握手失败）",
++			vmessTLSRemark))
++	}
++
+ 	m.restartXray()
+ 	return skipped, nil
+ }
+ 
++// errInboundNotFound 表示按 remark 找不到入站；调用方可以据此降级为「跳过」。
++var errInboundNotFound = errors.New("入站不存在")
++
+ // inboundPortByRemark 查出入站的监听端口。
++//
++// 只把 gorm.ErrRecordNotFound 当成「入站不存在」；其他 DB 错误原样带原因返回，
++// 否则真实的数据库故障会被报成「不存在，已跳过」，Enable 还会继续落盘状态。
+ func inboundPortByRemark(remark string) (int, error) {
+ 	var ib model.Inbound
+ 	if err := database.GetDB().Where("remark = ?", remark).First(&ib).Error; err != nil {
+-		return 0, fmt.Errorf("找不到入站 %s", remark)
++		if errors.Is(err, gorm.ErrRecordNotFound) {
++			return 0, fmt.Errorf("%w: %s", errInboundNotFound, remark)
++		}
++		return 0, fmt.Errorf("查询入站 %s 失败：%w", remark, err)
+ 	}
+ 	return ib.Port, nil
+ }
+ 
++// rewriteTLSCertificate points a plain (non-WebSocket) TLS inbound at the given
++// certificate directory, or back at the bundled self-signed certificate when
++// fqdn is empty. Only the TLS certificate block is touched — the transport and
++// the client list are left exactly as they are.
++func rewriteTLSCertificate(remark, fqdn, certDir string) error {
++	db := database.GetDB()
++	var ib model.Inbound
++	if err := db.Where("remark = ?", remark).First(&ib).Error; err != nil {
++		if errors.Is(err, gorm.ErrRecordNotFound) {
++			return fmt.Errorf("%w: %s", errInboundNotFound, remark)
++		}
++		return fmt.Errorf("查询入站 %s 失败：%w", remark, err)
++	}
++	var stream map[string]any
++	if err := json.Unmarshal([]byte(ib.StreamSettings), &stream); err != nil {
++		return err
++	}
++
++	sni := selfSignedSNI
++	dir := selfSignedCertDir
++	if fqdn != "" {
++		sni = fqdn
++		dir = certDir
++	}
++
++	tlsSettings, _ := stream["tlsSettings"].(map[string]any)
++	if tlsSettings == nil {
++		// 这不是 TLS 入站（用户改过），不要凭空给它加 TLS。
++		return fmt.Errorf("入站 %s 当前不是 TLS 传输，未做改动", remark)
++	}
++	tlsSettings["serverName"] = sni
++	tlsSettings["certificates"] = []any{map[string]any{
++		"certificateFile": filepath.Join(dir, "fullchain.pem"),
++		"keyFile":         filepath.Join(dir, "privkey.pem"),
++		"ocspStapling":    0, "oneTimeLoading": false, "usage": "encipherment", "buildChain": false,
++	}}
++	stream["tlsSettings"] = tlsSettings
++
++	out, err := json.Marshal(stream)
++	if err != nil {
++		return err
++	}
++	return db.Model(&model.Inbound{}).Where("id = ?", ib.Id).Update("stream_settings", string(out)).Error
++}
++
+ func (m *Manager) restoreInbounds() error {
+ 	var errs []string
+ 	for _, remark := range []string{wsVLESSRemark, wsVMessRemark} {
+ 		if err := rewriteWSInbound(remark, "", ""); err != nil {
++			if !errors.Is(err, errInboundNotFound) {
++				errs = append(errs, err.Error())
++			}
++		}
++	}
++	if err := rewriteTLSCertificate(vmessTLSRemark, "", ""); err != nil {
++		if !errors.Is(err, errInboundNotFound) {
+ 			errs = append(errs, err.Error())
+ 		}
+ 	}
+@@ -423,7 +514,10 @@ func rewriteWSInbound(remark, fqdn, certDir string) error {
+ 	db := database.GetDB()
+ 	var ib model.Inbound
+ 	if err := db.Where("remark = ?", remark).First(&ib).Error; err != nil {
+-		return fmt.Errorf("找不到入站 %s", remark)
++		if errors.Is(err, gorm.ErrRecordNotFound) {
++			return fmt.Errorf("%w: %s", errInboundNotFound, remark)
++		}
++		return fmt.Errorf("查询入站 %s 失败：%w", remark, err)
+ 	}
+ 	var stream map[string]any
+ 	if err := json.Unmarshal([]byte(ib.StreamSettings), &stream); err != nil {
+diff --git a/internal/web/service/domain/preferred.go b/internal/web/service/domain/preferred.go
+index ce2c4cf..8689886 100644
+--- a/internal/web/service/domain/preferred.go
++++ b/internal/web/service/domain/preferred.go
+@@ -42,11 +42,16 @@
+ package domain
+ 
+ import (
++	"bufio"
+ 	"context"
++	"crypto/rand"
++	"crypto/tls"
++	"encoding/base64"
+ 	"encoding/json"
+ 	"fmt"
+ 	"net"
+ 	"sort"
++	"strconv"
+ 	"strings"
+ 	"sync"
+ 	"time"
+@@ -302,6 +307,161 @@ func ResolvePreferredDomains(ctx context.Context, candidates []string) (domains
+ 	return domains, rejected
+ }
+ 
++// 单个候选域名的端到端探测超时，以及整批探测的总预算。
++const (
++	preferredProbeTimeout = 8 * time.Second
++	preferredProbeBudget  = 25 * time.Second
++)
++
++// probePreferredDomain 对一个候选优选域名做**真实的端到端探测**：以 fqdn 作为
++// SNI 与 Host，连到候选域名的 port 上请求 path，只接受 101 Switching Protocols。
++//
++// 为什么不能只校验「A 记录落在 CF 网段」——实测（同一台源站、同一时刻）：
++//
++//	time.is:2087          → 建连超时
++//	icook.hk:2087         → 301（CF 边缘把请求交给了 icook.hk 自己的站点）
++//	ip.sb:2087            → 521（CF 报 web server is down）
++//	japan.com:2087        → 建连超时
++//	www.visa.com.sg:2087  → 建连超时
++//	<自有域名>:2087        → 101 ✅
++//
++// 这些域名虽然解析到 CF 网段，却**不会**把流量路由回本机入站。只按网段过滤就
++// 把它们全部写进订阅，结果是客户端拿到一屏连不上的死节点。只有握手到 101 才
++// 能证明「SNI → 本机入站」这条链路真的通。
++func probePreferredDomain(ctx context.Context, host, fqdn string, port int, path string) (bool, string) {
++	if strings.TrimSpace(path) == "" {
++		path = "/"
++	}
++	dialer := &net.Dialer{}
++	conn, err := dialer.DialContext(ctx, "tcp", net.JoinHostPort(host, strconv.Itoa(port)))
++	if err != nil {
++		return false, "TCP 连接失败"
++	}
++	defer conn.Close()
++
++	if deadline, ok := ctx.Deadline(); ok {
++		_ = conn.SetDeadline(deadline)
++	} else {
++		_ = conn.SetDeadline(time.Now().Add(preferredProbeTimeout))
++	}
++
++	// 这里不校验证书：客户端会按 fqdn 去校验 CF 边缘的证书，而本探测只想知道
++	// CF 有没有把这条连接送回本机入站，所以只要求 TLS 握手能完成。
++	tlsConn := tls.Client(conn, &tls.Config{ //nolint:gosec // 探测用途，不做证书校验
++		ServerName:         fqdn,
++		InsecureSkipVerify: true,
++		NextProtos:         []string{"http/1.1"},
++	})
++	if err := tlsConn.HandshakeContext(ctx); err != nil {
++		return false, "TLS 握手失败"
++	}
++
++	nonce := make([]byte, 16)
++	if _, err := rand.Read(nonce); err != nil {
++		return false, "随机数生成失败"
++	}
++	req := "GET " + path + " HTTP/1.1\r\n" +
++		"Host: " + fqdn + "\r\n" +
++		"Upgrade: websocket\r\n" +
++		"Connection: Upgrade\r\n" +
++		"Sec-WebSocket-Version: 13\r\n" +
++		"Sec-WebSocket-Key: " + base64.StdEncoding.EncodeToString(nonce) + "\r\n" +
++		"User-Agent: ui3344-domain-probe\r\n\r\n"
++	if _, err := tlsConn.Write([]byte(req)); err != nil {
++		return false, "请求写入失败"
++	}
++
++	line, err := bufio.NewReader(tlsConn).ReadString('\n')
++	if err != nil {
++		return false, "无 HTTP 响应"
++	}
++	fields := strings.Fields(line)
++	if len(fields) >= 2 {
++		if fields[1] == "101" {
++			return true, ""
++		}
++		return false, "HTTP " + fields[1]
++	}
++	return false, "无法解析响应行"
++}
++
++// probePreferred 是端到端探测的注入点：测试替换它以免真的打公网。
++var probePreferred = probePreferredDomain
++
++// filterReachablePreferredDomains 并发探测候选域名，只保留真的能把 WS 请求送回
++// 本机入站的。保序、best effort（预算用尽时按已完成的部分返回）。
++func filterReachablePreferredDomains(ctx context.Context, candidates []string, fqdn string, port int, path string) (usable []string, rejected []RejectedDomain) {
++	if len(candidates) == 0 {
++		return nil, nil
++	}
++
++	type probeResult struct {
++		domain string
++		ok     bool
++		reason string
++	}
++
++	probeCtx, cancel := context.WithTimeout(ctx, preferredProbeBudget)
++	defer cancel()
++
++	jobs := make(chan string)
++	results := make(chan probeResult, len(candidates))
++	var wg sync.WaitGroup
++
++	workers := preferredResolveWorkers
++	if workers > len(candidates) {
++		workers = len(candidates)
++	}
++	for i := 0; i < workers; i++ {
++		wg.Add(1)
++		go func() {
++			defer wg.Done()
++			for d := range jobs {
++				// 给每个候选**单独**限时：否则某个「DNS 能解析但 TCP 黑洞」的域名
++				// 会吃掉整个 25s 总预算，把其余候选全判成「探测超时」。
++				cctx, cancel := context.WithTimeout(probeCtx, preferredProbeTimeout)
++				ok, reason := probePreferred(cctx, d, fqdn, port, path)
++				cancel()
++				results <- probeResult{domain: d, ok: ok, reason: reason}
++			}
++		}()
++	}
++
++	go func() {
++		defer close(jobs)
++		for _, d := range candidates {
++			select {
++			case jobs <- d:
++			case <-probeCtx.Done():
++				return
++			}
++		}
++	}()
++
++	go func() {
++		wg.Wait()
++		close(results)
++	}()
++
++	byName := make(map[string]probeResult, len(candidates))
++	for r := range results {
++		byName[r.domain] = r
++	}
++
++	for _, d := range candidates {
++		r, ok := byName[d]
++		switch {
++		case !ok:
++			rejected = append(rejected, RejectedDomain{d, "端到端探测超时"})
++		case r.ok:
++			usable = append(usable, d)
++		default:
++			rejected = append(rejected, RejectedDomain{d, "端到端探测失败（" + r.reason + "）"})
++		}
++	}
++	return usable, rejected
++}
++
+ // parseStream 解析入站的 stream_settings JSON。空串视为空对象。
+ func parseStream(raw string) (map[string]any, error) {
+ 	m := map[string]any{}
+@@ -413,9 +573,35 @@ func SyncPreferredHosts(ctx context.Context, fqdn string, candidates []string) (
+ 		}, nil
+ 	}
+ 
+-	domains, rejected = ResolvePreferredDomains(ctx, candidates)
+-	if len(domains) == 0 {
+-		return nil, rejected, []string{"候选优选域名全部未通过 Cloudflare 网段校验，已跳过优选生成"}, nil
++	// 自有域名永远排第一：它是唯一被实测证明可用的地址（101），放在最前可以保证
++	// 即使所有第三方优选域名都失效，订阅里仍然至少有一个能连通的域名节点。
++	// 之前的实现完全依赖第三方候选域名，结果是一整屏死节点、没有一个能用的地址。
++	//
++	// 注意：**返回值 domains 只包含第三方优选域名**（面板用它做展示与计数），
++	// 自有域名只加进 Hosts——否则面板会把 fqdn 既单列一遍又在优选列表里再列一遍。
++	domains, resolveRejected := ResolvePreferredDomains(ctx, candidates)
++	rejected = append(rejected, resolveRejected...)
++
++	if len(domains) > 0 {
++		// 用端口最小的那个加密入站作为探测靶子：自有域名与第三方优选域名走的是
++		// 同一条「SNI → CF 边缘 → 本机入站」链路。
++		probeTarget := inbounds[0]
++		usable, probeRejected := filterReachablePreferredDomains(ctx, domains, fqdn, probeTarget.Port, probeTarget.Path)
++		rejected = append(rejected, probeRejected...)
++		domains = usable
++		warnings = append(warnings, fmt.Sprintf(
++			"优选域名端到端探测：%d 个通过、%d 个被剔除（剔除的写进订阅只会得到连不上的死节点）",
++			len(domains), len(probeRejected)))
++	} else {
++		warnings = append(warnings, "候选优选域名全部未通过 Cloudflare 网段校验，本次只保留自有域名")
++	}
++
++	hosts := make([]string, 0, len(domains)+1)
++	hosts = append(hosts, fqdn)
++	for _, d := range domains {
++		if !strings.EqualFold(d, fqdn) {
++			hosts = append(hosts, d)
++		}
+ 	}
+ 
+ 	ids := make([]int, 0, len(inbounds))
+@@ -433,7 +619,7 @@ func SyncPreferredHosts(ctx context.Context, fqdn string, candidates []string) (
+ 	group := &entity.HostGroup{
+ 		Remark:     preferredGroupRemark,
+ 		InboundIds: ids,
+-		Hosts:      domains,
++		Hosts:      hosts,
+ 		Port:       0,
+ 		Path:       "",
+ 		Security:   "same",
+@@ -452,9 +638,12 @@ func SyncPreferredHosts(ctx context.Context, fqdn string, candidates []string) (
+ 		ports = append(ports, fmt.Sprintf("%d", ib.Port))
+ 	}
+ 	warnings = append(warnings, fmt.Sprintf(
+-		"优选域名已生成：%d 个域名 × %d 个加密入站（端口 %s）",
+-		len(domains), len(inbounds), strings.Join(ports, "/")))
++		"优选域名已生成：%d 个域名（含自有域名 %s）× %d 个加密入站（端口 %s）",
++		len(hosts), fqdn, len(inbounds), strings.Join(ports, "/")))
+ 
++	// 注意返回的是 domains（第三方优选域名），**不含自有域名**：调用方把它存进
++	// storedState.PreferredDomains 并在面板里展示，而面板已经单独列了 fqdn，
++	// 带上会重复显示。自有域名只在 Hosts 里。
+ 	return domains, rejected, warnings, nil
+ }
+ 
+diff --git a/internal/web/service/domain/preferred_test.go b/internal/web/service/domain/preferred_test.go
+index f3a2a46..b8aaea4 100644
+--- a/internal/web/service/domain/preferred_test.go
++++ b/internal/web/service/domain/preferred_test.go
+@@ -69,6 +69,19 @@ func stubLookup(t *testing.T, table map[string][]string) {
+ 	t.Cleanup(func() { lookupIPv4 = prev })
+ }
+ 
++// stubProbe 替换端到端探测，让测试不依赖网络。accept 为 nil 时全部通过。
++func stubProbe(t *testing.T, accept func(host string) bool) {
++	t.Helper()
++	prev := probePreferred
++	probePreferred = func(_ context.Context, host, _ string, _ int, _ string) (bool, string) {
++		if accept == nil || accept(host) {
++			return true, ""
++		}
++		return false, "stubbed rejection"
++	}
++	t.Cleanup(func() { probePreferred = prev })
++}
++
+ // TestCFPortClassification 锁定 Cloudflare 的两类端口。
+ //
+ // 这个分类是整个「优选只挂加密端口」功能的地基：分错了就会把 TLS 入站挂到
+@@ -238,12 +251,15 @@ func TestSyncPreferredHosts_RealWriteAndIdempotent(t *testing.T) {
+ 		"a.test": {"104.16.0.1"},
+ 		"b.test": {"8.8.8.8"}, // 非 CF，应被剔除
+ 	})
++	// 端到端探测在测试里打桩：真实网络不该进单元测试。
++	stubProbe(t, nil)
+ 
+ 	ctx := context.Background()
+ 	domains, rejected, warnings, err := SyncPreferredHosts(ctx, "d.example.com", []string{"a.test", "b.test"})
+ 	if err != nil {
+ 		t.Fatalf("SyncPreferredHosts: %v", err)
+ 	}
++	// 返回值只含第三方优选域名（不含自有域名，自有域名只进 Hosts）
+ 	if len(domains) != 1 || domains[0] != "a.test" {
+ 		t.Fatalf("domains = %v, want [a.test]", domains)
+ 	}
+@@ -264,10 +280,12 @@ func TestSyncPreferredHosts_RealWriteAndIdempotent(t *testing.T) {
+ 	}
+ 
+ 	hs := rows()
+-	// 1 个域名 × 2 个加密入站 = 2 行
+-	if len(hs) != 2 {
+-		t.Fatalf("hosts 行数 = %d, want 2 (%+v)", len(hs), hs)
++	// 2 个域名（自有域名 d.example.com + 通过探测的 a.test）× 2 个加密入站 = 4 行。
++	// 自有域名必须带上：它是唯一被实测证明可用的地址，第三方优选域名随时可能失效。
++	if len(hs) != 4 {
++		t.Fatalf("hosts 行数 = %d, want 4 (%+v)", len(hs), hs)
+ 	}
++	seenAddr := map[string]bool{}
+ 	for _, h := range hs {
+ 		if h.InboundId == plain.Id {
+ 			t.Fatalf("明文端口 %d 的入站被错误地挂上了优选域名", plain.Port)
+@@ -275,9 +293,10 @@ func TestSyncPreferredHosts_RealWriteAndIdempotent(t *testing.T) {
+ 		if h.InboundId != ib87.Id && h.InboundId != ib83.Id {
+ 			t.Fatalf("出现了预期外的入站 %d", h.InboundId)
+ 		}
+-		if h.Address != "a.test" {
+-			t.Errorf("address = %q, want a.test", h.Address)
++		if h.Address != "a.test" && h.Address != "d.example.com" {
++			t.Errorf("address = %q, want a.test 或 d.example.com", h.Address)
+ 		}
++		seenAddr[h.Address] = true
+ 		// 这三项必须保持「继承各自入站」的语义，否则订阅里的端口/路径/加密模式会错。
+ 		if h.Port != 0 {
+ 			t.Errorf("port = %d, want 0（0 = 继承入站端口）", h.Port)
+@@ -292,22 +311,25 @@ func TestSyncPreferredHosts_RealWriteAndIdempotent(t *testing.T) {
+ 			t.Errorf("sni/hostHeader = %q/%q, want d.example.com", h.Sni, h.HostHeader)
+ 		}
+ 	}
++	if !seenAddr["a.test"] || !seenAddr["d.example.com"] {
++		t.Errorf("自有域名与优选域名都应写进优选组，实际 address 集合 = %v", seenAddr)
++	}
+ 
+ 	// 幂等：再跑一次不应堆积
+ 	if _, _, _, err := SyncPreferredHosts(ctx, "d.example.com", []string{"a.test", "b.test"}); err != nil {
+ 		t.Fatalf("第二次 SyncPreferredHosts: %v", err)
+ 	}
+-	if n := len(rows()); n != 2 {
+-		t.Fatalf("重复调用后 hosts 行数 = %d, want 2（应幂等）", n)
++	if n := len(rows()); n != 4 {
++		t.Fatalf("重复调用后 hosts 行数 = %d, want 4（应幂等）", n)
+ 	}
+ 
+-	// 状态查询
++	// 状态查询（会带上自有域名，因为它是优选组里的一行）
+ 	statusDomains, statusInbounds, err := PreferredStatus()
+ 	if err != nil {
+ 		t.Fatalf("PreferredStatus: %v", err)
+ 	}
+-	if len(statusDomains) != 1 || statusDomains[0] != "a.test" {
+-		t.Errorf("status domains = %v, want [a.test]", statusDomains)
++	if len(statusDomains) != 2 || statusDomains[0] != "a.test" || statusDomains[1] != "d.example.com" {
++		t.Errorf("status domains = %v, want [a.test d.example.com]", statusDomains)
+ 	}
+ 	if len(statusInbounds) != 2 {
+ 		t.Errorf("status inbounds = %v, want 2 个", statusInbounds)
+diff --git a/internal/web/service/domain/v18_verify_test.go b/internal/web/service/domain/v18_verify_test.go
+new file mode 100644
+index 0000000..5933174
+--- /dev/null
++++ b/internal/web/service/domain/v18_verify_test.go
+@@ -0,0 +1,195 @@
++package domain
++
++import (
++	"context"
++	"encoding/json"
++	"errors"
++	"os"
++	"path/filepath"
++	"strconv"
++	"testing"
++	"time"
++
++	"github.com/mhsanaei/3x-ui/v3/internal/database"
++	"github.com/mhsanaei/3x-ui/v3/internal/database/model"
++)
++
++// mkTLSInbound 造一个普通（非 WebSocket）TLS 入站，用于验证域名功能对
++// VMess-安全-TLS 这类入站的证书替换与还原。
++func mkTLSInbound(t *testing.T, remark string, port int, serverName, certDir string) *model.Inbound {
++	t.Helper()
++	stream := map[string]any{
++		"network":  "tcp",
++		"security": "tls",
++		"tlsSettings": map[string]any{
++			"serverName": serverName,
++			"certificates": []any{map[string]any{
++				"certificateFile": certDir + "/fullchain.pem",
++				"keyFile":         certDir + "/privkey.pem",
++				"usage":           "encipherment",
++			}},
++			"alpn": []any{"http/1.1"},
++		},
++	}
++	b, err := json.Marshal(stream)
++	if err != nil {
++		t.Fatalf("marshal stream: %v", err)
++	}
++	ib := &model.Inbound{
++		Tag:            "in-" + strconv.Itoa(port) + "-vmess",
++		Enable:         true,
++		Port:           port,
++		Protocol:       model.Protocol("vmess"),
++		Remark:         remark,
++		Settings:       `{"clients":[{"id":"00000000-0000-0000-0000-000000000001","email":"t"}]}`,
++		StreamSettings: string(b),
++	}
++	if err := database.GetDB().Create(ib).Error; err != nil {
++		t.Fatalf("create inbound %d: %v", port, err)
++	}
++	return ib
++}
++
++func reloadStream(t *testing.T, id int) map[string]any {
++	t.Helper()
++	var ib model.Inbound
++	if err := database.GetDB().First(&ib, id).Error; err != nil {
++		t.Fatalf("reload inbound %d: %v", id, err)
++	}
++	var m map[string]any
++	if err := json.Unmarshal([]byte(ib.StreamSettings), &m); err != nil {
++		t.Fatalf("unmarshal stream: %v", err)
++	}
++	return m
++}
++
++// TestRewriteTLSCertificate_SwapAndRestore 锁定 v1.8 的行为：
++// 预设入站 VMess-安全-TLS-2053 原本用 CN=ui3344、且**没有任何 SAN** 的自签证书，
++// 客户端必然握手失败（分享链接里没有 allowInsecure/pin）。启用域名后必须换成
++// 域名证书，停用后必须能原样还原回自签证书。
++func TestRewriteTLSCertificate_SwapAndRestore(t *testing.T) {
++	setupDomainDB(t)
++	ib := mkTLSInbound(t, vmessTLSRemark, 2053, selfSignedSNI, selfSignedCertDir)
++
++	const fqdn = "x.example.com"
++	dir := filepath.Join("/root", "cert", "x.example.com")
++
++	if err := rewriteTLSCertificate(vmessTLSRemark, fqdn, dir); err != nil {
++		t.Fatalf("swap certificate: %v", err)
++	}
++	m := reloadStream(t, ib.Id)
++	ts, ok := m["tlsSettings"].(map[string]any)
++	if !ok {
++		t.Fatalf("tlsSettings missing after swap: %v", m)
++	}
++	if got := ts["serverName"]; got != fqdn {
++		t.Errorf("serverName = %v, want %v", got, fqdn)
++	}
++	certs, ok := ts["certificates"].([]any)
++	if !ok || len(certs) == 0 {
++		t.Fatalf("certificates missing after swap: %v", ts["certificates"])
++	}
++	first, _ := certs[0].(map[string]any)
++	if got := first["certificateFile"]; got != filepath.Join(dir, "fullchain.pem") {
++		t.Errorf("certificateFile = %v, want %v", got, filepath.Join(dir, "fullchain.pem"))
++	}
++	if got := first["keyFile"]; got != filepath.Join(dir, "privkey.pem") {
++		t.Errorf("keyFile = %v, want %v", got, filepath.Join(dir, "privkey.pem"))
++	}
++	// 传输层与客户端列表不能被顺手改掉
++	if m["network"] != "tcp" || m["security"] != "tls" {
++		t.Errorf("transport changed: network=%v security=%v", m["network"], m["security"])
++	}
++
++	// 停用域名 → 还原
++	if err := rewriteTLSCertificate(vmessTLSRemark, "", ""); err != nil {
++		t.Fatalf("restore certificate: %v", err)
++	}
++	m = reloadStream(t, ib.Id)
++	ts, _ = m["tlsSettings"].(map[string]any)
++	if got := ts["serverName"]; got != selfSignedSNI {
++		t.Errorf("restored serverName = %v, want %v", got, selfSignedSNI)
++	}
++	first, _ = ts["certificates"].([]any)[0].(map[string]any)
++	if got := first["certificateFile"]; got != filepath.Join(selfSignedCertDir, "fullchain.pem") {
++		t.Errorf("restored certificateFile = %v, want %v", got, filepath.Join(selfSignedCertDir, "fullchain.pem"))
++	}
++}
++
++// TestRewriteTLSCertificate_MissingInbound 锁定「找不到入站」返回可识别的错误，
++// 这样 applyInbounds/restoreInbounds 才能把它降级成「跳过」而不是让整个 Enable 失败。
++func TestRewriteTLSCertificate_MissingInbound(t *testing.T) {
++	setupDomainDB(t)
++	err := rewriteTLSCertificate("这个 remark 不存在", "x.example.com", "/root/cert/x")
++	if err == nil {
++		t.Fatal("want an error for a missing inbound")
++	}
++	if !errors.Is(err, errInboundNotFound) {
++		t.Errorf("want errInboundNotFound, got %v", err)
++	}
++}
++
++// TestRewriteTLSCertificate_NonTLSUntouched 保证用户把该入站改成非 TLS 传输后，
++// 我们不会凭空给它加一层 TLS。
++func TestRewriteTLSCertificate_NonTLSUntouched(t *testing.T) {
++	setupDomainDB(t)
++	ib := mkWSInbound(t, 9999, model.Protocol("vmess"), "ws", "none")
++	if err := rewriteTLSCertificate(ib.Remark, "x.example.com", "/root/cert/x"); err == nil {
++		t.Error("want an error when the inbound is not TLS")
++	}
++	m := reloadStream(t, ib.Id)
++	if _, hasTLS := m["tlsSettings"]; hasTLS {
++		t.Error("tlsSettings must not be invented for a non-TLS inbound")
++	}
++}
++
++// TestProbePreferredDomain_Live 是真的打公网的端到端探测，默认跳过。
++//
++// 它锁定的正是 v1.8 的核心修复依据：只按「A 记录落在 CF 网段」筛选是不够的，
++// 大量第三方优选域名虽然解析到 Cloudflare，却不会把流量送回本机入站。
++//
++//	UI3344_LIVE_PROBE=1 UI3344_LIVE_FQDN=49pwzx78.578272.xyz \
++//	UI3344_LIVE_PORT=2087 UI3344_LIVE_PATH=/ui3344ws \
++//	go test ./internal/web/service/domain/ -run TestProbePreferredDomain_Live -v
++func TestProbePreferredDomain_Live(t *testing.T) {
++	if os.Getenv("UI3344_LIVE_PROBE") != "1" {
++		t.Skip("set UI3344_LIVE_PROBE=1 to run the live end-to-end probe")
++	}
++	fqdn := os.Getenv("UI3344_LIVE_FQDN")
++	if fqdn == "" {
++		t.Skip("set UI3344_LIVE_FQDN to the panel's own domain")
++	}
++	port := 2087
++	if v := os.Getenv("UI3344_LIVE_PORT"); v != "" {
++		if p, err := strconv.Atoi(v); err == nil {
++			port = p
++		}
++	}
++	path := os.Getenv("UI3344_LIVE_PATH")
++	if path == "" {
++		path = "/"
++	}
++
++	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
++	defer cancel()
++
++	if ok, reason := probePreferredDomain(ctx, fqdn, fqdn, port, path); !ok {
++		t.Errorf("own domain %s must pass the probe, got: %s", fqdn, reason)
++	} else {
++		t.Logf("own domain %s -> 101 ok", fqdn)
++	}
++
++	for _, h := range []string{"time.is", "ip.sb", "japan.com", "icook.hk"} {
++		if ok, reason := probePreferredDomain(ctx, h, fqdn, port, path); ok {
++			t.Errorf("%s unexpectedly passed the probe (it must be rejected)", h)
++		} else {
++			t.Logf("%s -> rejected: %s", h, reason)
++		}
++	}
++
++	if ok, reason := probePreferredDomain(ctx, "no-such-host.invalid", fqdn, port, path); ok {
++		t.Errorf("a non-resolving host must not pass, got ok (%s)", reason)
++	} else {
++		t.Logf("no-such-host.invalid -> rejected: %s", reason)
++	}
++}
+diff --git a/internal/web/service/xray.go b/internal/web/service/xray.go
+index dc7560c..91bd823 100644
+--- a/internal/web/service/xray.go
++++ b/internal/web/service/xray.go
+@@ -252,8 +252,28 @@ func (s *XrayService) GetXrayConfig() (*xray.Config, error) {
+ 					entry["flow"] = flow
+ 				}
+ 			case model.Shadowsocks:
+-				if c.Password != "" {
+-					entry["password"] = c.Password
++				// Xray 会按 method 校验 PSK 长度，长度不对时**直接拒绝启动**：
++				//   Failed to start: main: failed to create server >
++				//   proxy/shadowsocks_2022: create service > bad key
++				// 后果不是「这一条入站不可用」，而是**整台服务器的所有节点一起下线**。
++				//
++				// clients 表里一个客户端只有一个 password 字段，而同一个客户端完全
++				// 可能被同时挂到 aes-128（16 字节）与 aes-256（32 字节）两条入站上
++				// ——总有一边长度不匹配。这里按优先级取密钥：入站 settings 里已有的
++				// （订阅下发的就是它，改它会让已导入的客户端失联）> 重新生成。
++				// 无论如何都不把非法配置交给 xray。
++				ssMethod, _ := settings["method"].(string)
++				pw := c.Password
++				if !validShadowsocksClientKey(ssMethod, pw) {
++					pw = settingsClientPassword(settings, c.Email)
++					if !validShadowsocksClientKey(ssMethod, pw) {
++						pw = randomShadowsocksClientKey(ssMethod)
++					}
++					logger.Warningf("Inbound %q (port %d): client %q 的 PSK 长度与 method %q 不符，已改用可用密钥；否则 xray 会因 bad key 拒绝启动，全部节点下线",
++						inbound.Tag, inbound.Port, c.Email, ssMethod)
++				}
++				if pw != "" {
++					entry["password"] = pw
+ 				}
+ 			case model.Hysteria:
+ 				if c.Auth != "" {
+diff --git a/packaging/create-inbounds.py b/packaging/create-inbounds.py
+index 375c846..865ae54 100644
+--- a/packaging/create-inbounds.py
++++ b/packaging/create-inbounds.py
+@@ -19,19 +19,53 @@ import json
+ import os
+ import random
+ import re
++import ssl
+ import subprocess
+ import sys
+ import urllib.parse
+ import urllib.request
+ 
+-BASE = os.environ.get("UI3344_URL", "http://127.0.0.1:33441/ui3344").rstrip("/")
+ USER = os.environ.get("UI3344_USER", "3344")
+ PASS = os.environ.get("UI3344_PASS", "3344")
+ XRAY = os.environ.get("UI3344_XRAY", "/usr/local/ui3344/bin/xray-linux-amd64")
+ SNI = os.environ.get("UI3344_SNI", "www.apple.com")
+ 
++# 面板可能跑在 33441(HTTP，全新安装) 或 8443(HTTPS，启用域名功能后会被搬过去并
++# 换成 Cloudflare Origin CA 证书)。硬编码 http://127.0.0.1:33441 会在启用域名后
++# 直接失效：端口不对，而且 Origin CA 证书不在系统信任库里 →
++#   <urlopen error [SSL: CERTIFICATE_VERIFY_FAILED] ...>
++# 于是安装器的「创建预设协议」静默失败。这里自动探测实际地址，并对本地回环
++# 关闭证书校验（Origin CA 证书本来也不该进系统信任库）。
++BASE = os.environ.get("UI3344_URL", "").rstrip("/")
++BASE_CANDIDATES = (
++    "http://127.0.0.1:33441/ui3344",
++    "https://127.0.0.1:8443/ui3344",
++    "http://127.0.0.1:8443/ui3344",
++)
++
++_ssl_ctx = ssl.create_default_context()
++_ssl_ctx.check_hostname = False
++_ssl_ctx.verify_mode = ssl.CERT_NONE
++
+ cj = http.cookiejar.CookieJar()
+-op = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(cj))
++op = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(cj),
++                                 urllib.request.HTTPSHandler(context=_ssl_ctx))
++
++
++def detect_base():
++    """确定面板基址：优先 UI3344_URL，否则依次探测候选地址。"""
++    global BASE
++    if BASE:
++        return BASE
++    for cand in BASE_CANDIDATES:
++        try:
++            op.open(cand + "/csrf-token", timeout=5).read()
++            BASE = cand
++            return BASE
++        except Exception:  # noqa: BLE001
++            continue
++    BASE = BASE_CANDIDATES[0]
++    return BASE
+ 
+ 
+ def get(path):
+@@ -168,7 +202,66 @@ def inbound(remark, port, protocol, settings, stream):
+             "expiryTime": 0, "trafficReset": "never", "shareAddrStrategy": "listen"}
+ 
+ 
++def repair_prohibited_vless(csrf):
++    """把既有的「VLESS + 无 TLS/Reality」入站原地修成 Reality。
++
++    本文件是**按 remark 幂等**的：已经存在的入站会被跳过。所以老版本（v1.7 及
++    更早）装出来的速度档不会被新建逻辑修到——而它恰恰是坏的：
++
++        vless://<uuid>@<公网IP>:8444?security=none&type=tcp
++
++    Xray 26.x 的 outbound 校验会直接拒绝加载这种配置：
++
++        failed to build outbound config ... vless without TLS or other encryption
++        is prohibited unless the server address is a private IP or domain
++
++    客户端连配置都起不来，节点在订阅里存在但永远用不了。这里在安装/升级时做一次
++    原地修复：只把这类入站的 streamSettings 换成 Reality，不动端口、备注与客户端。
++    """
++    try:
++        lst = json.loads(get("/panel/api/inbounds/list")).get("obj") or []
++    except Exception as e:  # noqa: BLE001
++        print("ui3344 presets: repair 列表读取失败 %s" % e, file=sys.stderr)
++        return 0
++
++    fixed = 0
++    for ib in lst:
++        if (ib.get("protocol") or "").lower() != "vless":
++            continue
++        raw = ib.get("streamSettings")
++        if isinstance(raw, str):
++            try:
++                stream = json.loads(raw or "{}")
++            except Exception:  # noqa: BLE001
++                continue
++        else:
++            stream = raw or {}
++        if (stream.get("network") or "").lower() != "tcp":
++            continue
++        if (stream.get("security") or "none").lower() != "none":
++            continue
++        try:
++            p, q = reality_keys()
++        except Exception:  # noqa: BLE001
++            print("ui3344 presets: repair 跳过（xray x25519 不可用）", file=sys.stderr)
++            return fixed
++        ib["streamSettings"] = reality(p, q, os.urandom(4).hex())
++        try:
++            r = json.loads(post_json("/panel/api/inbounds/update/%d" % ib["id"], ib, csrf))
++            if r.get("success"):
++                fixed += 1
++                print("ui3344 presets: repaired %s (端口 %s) -> Reality"
++                      % (ib.get("remark"), ib.get("port")))
++            else:
++                print("ui3344 presets: repair %s -> %s" % (ib.get("remark"), r.get("msg")),
++                      file=sys.stderr)
++        except Exception as e:  # noqa: BLE001
++            print("ui3344 presets: repair %s ERROR %s" % (ib.get("remark"), e), file=sys.stderr)
++    return fixed
++
++
+ def main():
++    detect_base()
+     token = re.search(r"[A-Za-z0-9_\-]{40,}", get("/csrf-token"))
+     if not token:
+         print("ui3344 presets: could not read csrf token", file=sys.stderr)
+@@ -187,13 +280,34 @@ def main():
+     except Exception:  # noqa: BLE001
+         print("ui3344 presets: xray x25519 unavailable; Reality inbound will be skipped", file=sys.stderr)
+ 
++    # 速度档原本是「VLESS + 裸 TCP + 无加密」，但那已经不可能用了：Xray 26.x 的
++    # outbound 校验会直接拒绝加载
++    #
++    #   Failed to start: infra/conf: vless without TLS or other encryption is
++    #   prohibited unless the server address is a private IP or domain
++    #
++    # 客户端连配置都起不来——不是"不安全"，而是根本用不了。VLESS 自身不含任何
++    # 加密，脱离 TLS/Reality 就是明文，所以这里给速度档也套一层 Reality：不需要
++    # 证书、握手开销小，且现代客户端都接受。用独立的一对密钥与 shortId，
++    # 避免与 443 的安全档共用凭据。
++    priv2 = pub2 = sid2 = None
++    try:
++        priv2, pub2 = reality_keys()
++        sid2 = os.urandom(4).hex()
++    except Exception:  # noqa: BLE001
++        pass
++
+     has_cert = os.path.exists(TLS_CERT + "/fullchain.pem") and os.path.exists(TLS_CERT + "/privkey.pem")
+     ws_stream = ws("/ui3344ws")
+     vmess_ws_stream = ws("/ui3344vm")
+     tls_stream = tls_selfsigned() if has_cert else None
+     reality_stream = reality(priv, pub, sid) if (priv and pub) else None
++    speed_stream = reality(priv2, pub2, sid2) if (priv2 and pub2) else TCP_NONE
++    if speed_stream is TCP_NONE:
++        print("ui3344 presets: WARNING 速度档拿不到 Reality 密钥，已退回裸 TCP；"
++              "Xray 26.x 客户端会拒绝加载该节点", file=sys.stderr)
+     items = [
+-        inbound("VLESS-速度-8443", 8443, "vless", vless_settings("vless-speed", TCP_NONE), TCP_NONE),
++        inbound("VLESS-速度-8443", 8443, "vless", vless_settings("vless-speed", speed_stream), speed_stream),
+         # ws: flow must stay empty -- Vision cannot ride a WebSocket transport.
+         inbound("VLESS-综合-WS-2087", 2087, "vless", vless_settings("vless-ws", ws_stream), ws_stream),
+         inbound("VMess-速度-8080", 8080, "vmess", vmess_settings("vmess-speed"), TCP_NONE),
+@@ -230,6 +344,11 @@ def main():
+             failed += 1
+             print("ui3344 presets: %s ERROR %s" % (it["remark"], e), file=sys.stderr)
+     print("ui3344 presets: created=%d skipped=%d failed=%d" % (created, skipped, failed))
++
++    # 既有的坏入站不会被上面的幂等逻辑修到（同 remark 直接跳过），所以单独修一次。
++    repaired = repair_prohibited_vless(token)
++    if repaired:
++        print("ui3344 presets: repaired=%d (VLESS 裸 TCP -> Reality)" % repaired)
+     return 0
+ 
+ 
+diff --git a/packaging/domain-setup.py b/packaging/domain-setup.py
+index 1b762e3..2f9add5 100644
+--- a/packaging/domain-setup.py
++++ b/packaging/domain-setup.py
+@@ -5,7 +5,7 @@
+ 都需要 TOTP 动态码。可作为交互菜单使用，也可直接带子命令调用（供 ui3344 菜单）。
+ 
+ Env:
+-  UI3344_URL   面板基址   (默认 http://127.0.0.1:33441/ui3344)
++  UI3344_URL   面板基址   (留空则自动探测 33441/HTTP 与 8443/HTTPS)
+   UI3344_USER  登录用户名 (默认 3344)
+   UI3344_PASS  登录密码   (默认 3344)
+ """
+@@ -13,16 +13,48 @@ import http.cookiejar
+ import json
+ import os
+ import re
++import ssl
+ import sys
+ import urllib.parse
+ import urllib.request
+ 
+-BASE = os.environ.get("UI3344_URL", "http://127.0.0.1:33441/ui3344").rstrip("/")
+ USER = os.environ.get("UI3344_USER", "3344")
+ PASS = os.environ.get("UI3344_PASS", "3344")
+ 
++# 面板启用域名功能后会被搬到 8443 并换用 Cloudflare Origin CA 证书，而那个证书
++# 不在系统信任库里；硬编码 http://127.0.0.1:33441 会直接失效
++# （<urlopen error [SSL: CERTIFICATE_VERIFY_FAILED] ...>）。这里自动探测实际地址，
++# 并对本地回环关闭证书校验。
++BASE = os.environ.get("UI3344_URL", "").rstrip("/")
++BASE_CANDIDATES = (
++    "http://127.0.0.1:33441/ui3344",
++    "https://127.0.0.1:8443/ui3344",
++    "http://127.0.0.1:8443/ui3344",
++)
++
++_ssl_ctx = ssl.create_default_context()
++_ssl_ctx.check_hostname = False
++_ssl_ctx.verify_mode = ssl.CERT_NONE
++
+ cj = http.cookiejar.CookieJar()
+-op = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(cj))
++op = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(cj),
++                                 urllib.request.HTTPSHandler(context=_ssl_ctx))
++
++
++def detect_base():
++    """确定面板基址：优先 UI3344_URL，否则依次探测候选地址。"""
++    global BASE
++    if BASE:
++        return BASE
++    for cand in BASE_CANDIDATES:
++        try:
++            op.open(cand + "/csrf-token", timeout=5).read()
++            BASE = cand
++            return BASE
++        except Exception:  # noqa: BLE001
++            continue
++    BASE = BASE_CANDIDATES[0]
++    return BASE
+ 
+ 
+ def get(path):
+@@ -43,6 +75,7 @@ def post_form(path, data, csrf):
+ 
+ 
+ def login():
++    detect_base()
+     m = re.search(r"[A-Za-z0-9_\-]{40,}", get("/csrf-token"))
+     if not m:
+         print("无法获取 CSRF token", file=sys.stderr)
