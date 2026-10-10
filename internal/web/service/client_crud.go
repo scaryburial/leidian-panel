@@ -201,6 +201,22 @@ func (s *ClientService) Create(inboundSvc *InboundService, payload *ClientCreate
 
 	// Prepared before any inbound is written: fillProtocolDefaults mints the
 	// shared credentials on the first inbound and every later one reuses them.
+	//
+	// SS2022 前置判定（批量创建路径）：一个身份只有一份密码，不能同时挂到
+	// aes-128 与 aes-256 两类入站上；能修的在这里修好，修不了的当场拒绝，
+	// 绝不把「xray 起不来」的配置写进库里。
+	if guarded, notes, gErr := s.enforceShadowsocksKeyGuard(
+		database.GetDB(), client, payload.InboundIds,
+		ssKeyGuardOptions{RejectOnConflict: true, RepairSingleSize: true},
+	); gErr != nil {
+		return false, gErr
+	} else {
+		client = guarded
+		for _, n := range notes {
+			logger.Warning(n)
+		}
+	}
+
 	adds := make([]*model.Inbound, 0, len(payload.InboundIds))
 	for _, ibId := range payload.InboundIds {
 		inbound, getErr := inboundSvc.GetInbound(ibId)
@@ -679,6 +695,21 @@ func (s *ClientService) Update(inboundSvc *InboundService, id int, updated model
 		return false, tcErr
 	}
 
+	// SS2022：改了密码就重新判定一次长度是否与**全部已挂载的** SS2022 入站
+	// 相容；纯元数据编辑不判定（见 enforceShadowsocksKeyGuard 的注释）。
+	{
+		credentialChanged := updated.Password != "" && updated.Password != existing.Password
+		guarded, notes, gErr := s.enforceShadowsocksKeyGuard(database.GetDB(), updated, attachedIds,
+			ssKeyGuardOptions{RejectOnConflict: credentialChanged, RepairSingleSize: credentialChanged})
+		if gErr != nil {
+			return false, gErr
+		}
+		updated = guarded
+		for _, n := range notes {
+			logger.Warning(n)
+		}
+	}
+
 	// Built before any inbound is written, as in Create: fillProtocolDefaults
 	// mints the shared credentials on the first inbound, later ones reuse them.
 	applies := make([]inboundApply, 0, len(inboundIds))
@@ -1034,6 +1065,20 @@ func (s *ClientService) Attach(inboundSvc *InboundService, id int, inboundIds []
 	// the same address on both.
 	if !s.hasTunnelAttachment(inboundSvc, currentIds) {
 		clientWire.AllowedIPs = nil
+	}
+
+	// SS2022 前置判定（挂载路径）：这是「先挂 aes-256、再挂 aes-128」造出非法
+	// 组合的地方。判定要带上**已有的全部挂载**，否则分两步走出来的冲突会漏掉。
+	if guarded, notes, gErr := s.enforceShadowsocksKeyGuard(
+		database.GetDB(), *clientWire, inboundIds,
+		ssKeyGuardOptions{RejectOnConflict: true, RepairSingleSize: true},
+	); gErr != nil {
+		return false, gErr
+	} else {
+		*clientWire = guarded
+		for _, n := range notes {
+			logger.Warning(n)
+		}
 	}
 
 	adds := make([]*model.Inbound, 0, len(inboundIds))

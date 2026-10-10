@@ -6,11 +6,16 @@ Runs on the panel host after `ui3344` is up. Idempotent: any inbound whose remar
 already exists is skipped, so it is safe to re-run after upgrades.
 
 Env overrides:
-  UI3344_URL    panel base URL   (default http://127.0.0.1:33441/ui3344)
-  UI3344_USER   login username   (default 3344)
-  UI3344_PASS   login password   (default 3344)
+  UI3344_URL    panel base URL   (empty → auto-detect 33441/HTTP and 8443/HTTPS)
+  UI3344_USER   login username   (required; the installer passes 3344 on a fresh box)
+  UI3344_PASS   login password   (required; NOT defaulted — see below)
   UI3344_XRAY   xray binary path (default /usr/local/ui3344/bin/xray-linux-amd64)
   UI3344_SNI    Reality dest     (default www.apple.com)
+
+  UI3344_USER / UI3344_PASS 是**必填**的。面板新版把管理员口令写进 users 表，
+  `ui3344 setting -show` 不打印用户名/口令，所以脚本无法自己读出来；而线上
+  口令几乎必然已被改强（默认 3344 早已失效）。这里不再悄悄按 3344 登录——
+  缺凭据就直接给出可照抄的补救命令，缺什么说什么。
 Exit code is non-zero only when the panel cannot be reached / logged into.
 """
 import base64
@@ -22,13 +27,43 @@ import re
 import ssl
 import subprocess
 import sys
+import urllib.error
 import urllib.parse
 import urllib.request
 
-USER = os.environ.get("UI3344_USER", "3344")
-PASS = os.environ.get("UI3344_PASS", "3344")
+DEFAULT_USER = "3344"
+
+# UI3344_USER 允许缺省为初始用户名 3344（全新安装时就是它）；
+# UI3344_PASS **不设默认值**：口令一旦改强，按 3344 去试只会得到一个
+# 让人摸不着头脑的 "login failed"，远不如当场说清怎么补救。
+USER = (os.environ.get("UI3344_USER") or DEFAULT_USER).strip()
+PASS = os.environ.get("UI3344_PASS") or ""
 XRAY = os.environ.get("UI3344_XRAY", "/usr/local/ui3344/bin/xray-linux-amd64")
 SNI = os.environ.get("UI3344_SNI", "www.apple.com")
+
+
+def missing_password_hint():
+    print(
+        "ui3344 presets: 未提供面板口令（环境变量 UI3344_PASS 为空）。\n"
+        "  面板新版把口令存在 users 表，`ui3344 setting -show` 不打印它，脚本读不出来。\n"
+        "  请这样补跑（<面板口令> 换成你自己设的那个）：\n"
+        "    UI3344_PASS='<面板口令>' python3 %s\n"
+        "  若面板仍是默认口令，用： UI3344_PASS=3344 python3 %s"
+        % (os.path.basename(__file__), os.path.basename(__file__)),
+        file=sys.stderr,
+    )
+
+
+def login_rejected_hint():
+    print(
+        "ui3344 presets: 登录被面板拒绝（用户名或口令不对）。\n"
+        "  面板口令很可能已经改强（默认 3344 早已失效），或 UI3344_USER 不是当前管理员。\n"
+        "  请用当前口令补跑：\n"
+        "    UI3344_PASS='<面板口令>' UI3344_USER='<管理员用户名>' python3 %s\n"
+        "  注意：连续失败会触发面板的登录限流（短时间内会一直返回失败），别反复猜口令。"
+        % os.path.basename(__file__),
+        file=sys.stderr,
+    )
 
 # 面板可能跑在 33441(HTTP，全新安装) 或 8443(HTTPS，启用域名功能后会被搬过去并
 # 换成 Cloudflare Origin CA 证书)。硬编码 http://127.0.0.1:33441 会在启用域名后
@@ -359,6 +394,9 @@ SS_KEY_BYTES = {
 
 
 def main():
+    if not PASS:
+        missing_password_hint()
+        return 4
     detect_base()
     token = re.search(r"[A-Za-z0-9_\-]{40,}", get("/csrf-token"))
     if not token:
@@ -366,9 +404,29 @@ def main():
         return 2
     token = token.group(0)
     try:
-        post_form("/login", {"username": USER, "password": PASS, "_csrf": token})
+        body = post_form("/login", {"username": USER, "password": PASS, "_csrf": token})
+    except urllib.error.HTTPError as e:
+        # 401/403 与「网络不通」必须区分开：前者是口令问题（要给出补救命令），
+        # 后者是面板没起来，提示完全不一样。
+        if e.code in (401, 403):
+            login_rejected_hint()
+            print("ui3344 presets: login HTTP %d from %s" % (e.code, BASE), file=sys.stderr)
+        else:
+            print("ui3344 presets: login HTTP %d from %s; skip" % (e.code, BASE), file=sys.stderr)
+        return 3
     except Exception as e:  # noqa: BLE001
-        print("ui3344 presets: login failed (%s); skip" % e, file=sys.stderr)
+        print("ui3344 presets: 无法连接面板 %s（%s）；skip" % (BASE, e), file=sys.stderr)
+        return 3
+
+    # 面板的登录失败是 **HTTP 200 + {"success": false}**，不是 4xx，
+    # 所以必须看响应体，否则「口令错了」会被当成登录成功继续往下跑。
+    try:
+        res = json.loads(body)
+    except Exception:  # noqa: BLE001
+        res = None
+    if isinstance(res, dict) and res.get("success") is False:
+        login_rejected_hint()
+        print("ui3344 presets: panel said: %s" % res.get("msg", ""), file=sys.stderr)
         return 3
 
     priv = pub = sid = None
@@ -465,5 +523,27 @@ def main():
     return 0
 
 
+def usage():
+    print(
+        """ui3344 预设入站创建（幂等：remark 已存在就跳过）
+
+用法: python3 create-inbounds.py [--help]
+
+环境变量:
+  UI3344_URL    面板基址。留空则自动探测 33441/HTTP 与 8443/HTTPS
+  UI3344_USER   登录用户名（默认 %s）
+  UI3344_PASS   登录口令（**必填**；面板口令已改强时必须给当前口令）
+  UI3344_XRAY   xray 路径（默认 /usr/local/ui3344/bin/xray-linux-amd64）
+  UI3344_SNI    Reality dest（默认 www.apple.com）
+
+示例:
+  UI3344_PASS='<面板口令>' python3 create-inbounds.py
+""" % DEFAULT_USER
+    )
+    return 0
+
+
 if __name__ == "__main__":
+    if len(sys.argv) > 1 and sys.argv[1] in ("-h", "--help"):
+        sys.exit(usage())
     sys.exit(main())

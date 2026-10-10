@@ -43,7 +43,11 @@ const (
 // A nil error with no rows means the subId doesn't match anything (deleted
 // client, never-existed id) and becomes 404. A real error becomes 500. No
 // body — VPN clients only look at the status.
+//
+// The response is marked non-cacheable because a cached "not found" would
+// outlive the reason it was produced (a disabled client, a pending card key).
 func writeSubError(c *gin.Context, err error) {
+	setNoCacheHeaders(c)
 	if err == nil {
 		c.Status(http.StatusNotFound)
 		return
@@ -93,6 +97,13 @@ type SUBController struct {
 	clientService   service.ClientService
 	settingService  service.SettingService
 
+	// cardKeyLimiter bounds /c/ requests per source address and endpoint. nil
+	// means the limiter is switched off.
+	cardKeyLimiter *cardKeyRateLimiter
+	// cardKeyRefusalStatus is the answer a caller over budget gets; see
+	// refuseCardKey.
+	cardKeyRefusalStatus int
+
 	subTemplateMu    sync.RWMutex
 	subTemplateCache map[string]*cachedSubTemplate
 }
@@ -134,6 +145,10 @@ type subControllerConfig struct {
 
 	subIncyEnableRouting bool
 	subIncyRoutingRules  string
+
+	// cardKeyRateLimit is the budget for the /c/ card-key endpoints; see
+	// cardkey_ratelimit.go.
+	cardKeyRateLimit cardKeyRateLimitConfig
 }
 
 type SUBControllerOption func(*subControllerConfig)
@@ -262,6 +277,13 @@ func WithSUBHappConfig(value HappConfig) SUBControllerOption {
 	return func(config *subControllerConfig) { config.happConfig = value }
 }
 
+// WithSUBCardKeyRateLimit overrides the card-key endpoint budget (rate limiting
+// on /c/<card_key>). The shipped default is built from the environment by
+// defaultCardKeyRateLimitConfig.
+func WithSUBCardKeyRateLimit(value cardKeyRateLimitConfig) SUBControllerOption {
+	return func(config *subControllerConfig) { config.cardKeyRateLimit = value }
+}
+
 func defaultSUBControllerConfig() subControllerConfig {
 	return subControllerConfig{
 		subPath:        "/sub/",
@@ -270,6 +292,8 @@ func defaultSUBControllerConfig() subControllerConfig {
 		subEncrypt:     true,
 		remarkTemplate: service.DefaultRemarkTemplate,
 		updateInterval: "12",
+
+		cardKeyRateLimit: defaultCardKeyRateLimitConfig(),
 	}
 }
 
@@ -315,7 +339,16 @@ func NewSUBController(g *gin.RouterGroup, options ...SUBControllerOption) *SUBCo
 		subJsonService:  subJsonSvc,
 		subClashService: NewSubClashService(config.subClashEnableRouting, config.subClashRules, sub),
 
+		cardKeyLimiter: newCardKeyRateLimiter(config.cardKeyRateLimit),
+
 		subTemplateCache: map[string]*cachedSubTemplate{},
+	}
+	if a.cardKeyLimiter != nil {
+		limit := config.cardKeyRateLimit
+		a.cardKeyRefusalStatus = a.cardKeyLimiter.cfg.RefusalStatus
+		logger.Infof("sub: card key rate limit enabled: %d requests/minute (%d burst), %d failed lookups/minute (%d burst), at most %d tracked callers, refusal status %d",
+			limit.SuccessPerMin, limit.SuccessBurst,
+			limit.FailurePerMin, limit.FailureBurst, limit.MaxEntries, a.cardKeyRefusalStatus)
 	}
 	a.initRouter(g)
 	return a
@@ -416,8 +449,16 @@ func (a *SUBController) registerCardKeyRoutes(g *gin.RouterGroup) {
 
 	// The static clash/ and json/ children are registered before the :subid
 	// wildcard so the router tree keeps its static-before-wildcard shape.
+	//
+	// The rate limiter brackets the resolver: the gate refuses a caller that is
+	// already over budget before the card-key lookup spends a database query,
+	// and the charge middleware reserves the token once the resolver has said
+	// whether the key resolved. Both consult only the caller's own history, so
+	// neither refusal can reveal whether a key exists.
 	gCard := g.Group(subCardKeyPath)
+	gCard.Use(a.cardKeyRateLimitGate())
 	gCard.Use(a.cardKeyParamResolver())
+	gCard.Use(a.cardKeyRateLimitCharge())
 	if a.clashEnabled {
 		gCard.GET("clash/:subid", a.subClashs)
 		gCard.HEAD("clash/:subid", a.subClashs)
@@ -779,6 +820,7 @@ func (a *SUBController) enforceHwid(c *gin.Context) bool {
 	}
 	applyHwidHeaders(c, result)
 	if !result.Allowed {
+		setNoCacheHeaders(c)
 		c.Status(http.StatusNotFound)
 		return false
 	}
@@ -1004,6 +1046,16 @@ func (a *SUBController) ApplyCommonHeaders(
 	profileRoutingRules string,
 	profileHideSettings bool,
 ) {
+	// A subscription body is per-subscriber key material, and it goes out on a
+	// listener that is normally reached through a CDN. Without an explicit
+	// directive an intermediate cache is free to store it and replay it — to the
+	// wrong subscriber when a cache keys loosely, or to a subscriber whose
+	// access was already revoked. Vary on User-Agent as well, because the
+	// auto-detect branches serve different formats for the same URL depending on
+	// the client that asks.
+	setNoCacheHeaders(c)
+	c.Header("Vary", "User-Agent")
+
 	c.Writer.Header().Set("Subscription-Userinfo", header)
 	c.Writer.Header().Set("Profile-Update-Interval", updateInterval)
 

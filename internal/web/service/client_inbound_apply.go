@@ -494,8 +494,33 @@ func (s *ClientService) AddInboundClient(inboundSvc *InboundService, data *model
 
 	if oldInbound.Protocol == model.Shadowsocks {
 		applyShadowsocksClientMethod(interfaceClients, oldSettings)
+		// SS2022：一个客户端身份只有一份密码，而 aes-128 要 16 字节、aes-256 要
+		// 32 字节。这里在**写库之前**判定「新增挂载后是否合法」：单种长度就自动
+		// 修正（并写回 settings 与 clients 表，保证 xray 配置和订阅下发的密钥
+		// 重新一致），两种长度共存则直接拒绝并给出可执行的中文提示。
+		for i := range clients {
+			fixed, notes, gErr := s.enforceShadowsocksKeyGuard(database.GetDB(), clients[i],
+				[]int{oldInbound.Id}, ssKeyGuardOptions{RejectOnConflict: true, RepairSingleSize: true})
+			if gErr != nil {
+				return false, gErr
+			}
+			for _, n := range notes {
+				logger.Warning(n)
+			}
+			if fixed.Password == clients[i].Password {
+				continue
+			}
+			clients[i] = fixed
+			// 索引对齐（见上文 checkEmailsExistForClients 的说明）：settings 里
+			// 那一条也要换成同一个密钥，否则 settings 与 clients 表会各说一套。
+			if i < len(interfaceClients) {
+				if cm, ok := interfaceClients[i].(map[string]any); ok {
+					cm["password"] = fixed.Password
+					interfaceClients[i] = cm
+				}
+			}
+		}
 	}
-
 	oldClients, _ := oldSettings["clients"].([]any)
 	oldClients = compactOrphans(database.GetDB(), oldClients)
 	oldClients = append(oldClients, interfaceClients...)
@@ -815,6 +840,28 @@ func (s *ClientService) UpdateInboundClient(inboundSvc *InboundService, data *mo
 	}
 	if oldInbound.Protocol == model.Shadowsocks {
 		applyShadowsocksClientMethod(interfaceClients, oldSettings)
+		// 同上：只在**密码真的被改动**时才实施冲突判定。纯元数据编辑
+		// （改配额/改启用状态/重命名）不能被历史脏数据挡住，否则流量重置、
+		// 续期这些日常操作会一起失败。
+		credentialChanged := clientIndex >= 0 && clientIndex < len(oldClients) &&
+			clients[0].Password != "" && clients[0].Password != oldClients[clientIndex].Password
+		fixed, notes, gErr := s.enforceShadowsocksKeyGuard(database.GetDB(), clients[0],
+			[]int{oldInbound.Id}, ssKeyGuardOptions{RejectOnConflict: credentialChanged, RepairSingleSize: credentialChanged})
+		if gErr != nil {
+			return false, gErr
+		}
+		for _, n := range notes {
+			logger.Warning(n)
+		}
+		if fixed.Password != clients[0].Password {
+			clients[0] = fixed
+			if len(interfaceClients) > 0 {
+				if cm, ok := interfaceClients[0].(map[string]any); ok {
+					cm["password"] = fixed.Password
+					interfaceClients[0] = cm
+				}
+			}
+		}
 	}
 	if len(interfaceClients) > 0 {
 		if newMap, ok := interfaceClients[0].(map[string]any); ok {

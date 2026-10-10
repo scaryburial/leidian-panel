@@ -17,27 +17,75 @@ import (
 )
 
 // getRemoteIp extracts the real IP address from the request headers or remote address.
+//
+// 信任模型（顺序即优先级，改动前请先读完）：
+//
+//  1. 对端 socket 地址落在 Cloudflare 网段内 → 请求来自 CF 回源，采信
+//     CF-Connecting-IP（由 CF 覆盖写入，客户端无法伪造）。它缺失或不是合法 IP 时，
+//     退回 X-Forwarded-For 中「最靠近我们且不属于 CF 网段」的那一跳——CF 会把真实
+//     客户端 IP 追加在 XFF 右侧，左侧可能是客户端自己伪造的内容，所以必须
+//     从右往左找，绝不能取最左边那个。再不行才退回对端地址。
+//
+//  2. 对端落在 settings.trustedProxyCIDRs 内（未配置时默认只有回环）→ 沿用原有语义
+//     采信 X-Real-IP / X-Forwarded-For，但会跳过 CF 边缘地址：源站前面如果还有一层
+//     本地反代（nginx 等），它记录的“对端”同样是 CF 边缘，那不是真实客户端。
+//
+//  3. 其它情况（公网直连）→ 一律使用对端 socket 地址，不采信任何头部，防伪造。
+//
+// 注意：不要为了“支持 CF”而放宽 trustedProxyCIDRs 的默认值——那会变成信任一切，
+// 让任何直连者都能用 X-Forwarded-For 伪造 IP 绕过登录限速。CF 网段是独立的一类
+// 信任来源（见 cloudflare_ips.go）。
 func getRemoteIp(c *gin.Context) string {
 	remoteIP, ok := extractTrustedIP(c.Request.RemoteAddr)
 	if !ok {
 		return "unknown"
 	}
 
+	if isCloudflareIP(remoteIP) {
+		if ip, ok := extractTrustedIP(c.GetHeader(cfConnectingIPHeader)); ok {
+			return ip
+		}
+		if ip, ok := selectForwardedHop(c.GetHeader("X-Forwarded-For"), isCloudflareIP); ok {
+			return ip
+		}
+		return remoteIP
+	}
+
 	if isTrustedProxy(remoteIP) {
-		if ip, ok := extractTrustedIP(c.GetHeader("X-Real-IP")); ok {
+		// CF 边缘地址出现在这里说明“真实客户端”还在更前面一跳，不能直接采用。
+		if ip, ok := extractTrustedIP(c.GetHeader("X-Real-IP")); ok && !isCloudflareIP(ip) {
 			return ip
 		}
 
-		if xff := c.GetHeader("X-Forwarded-For"); xff != "" {
-			for part := range strings.SplitSeq(xff, ",") {
-				if ip, ok := extractTrustedIP(part); ok {
-					return ip
-				}
-			}
+		if ip, ok := selectForwardedHop(c.GetHeader("X-Forwarded-For"), func(value string) bool {
+			// 跳过 CF 边缘与已知信任代理：它们只是转发链上的中间节点。
+			return isCloudflareIP(value) || isTrustedProxy(value)
+		}); ok {
+			return ip
 		}
 	}
 
 	return remoteIP
+}
+
+// selectForwardedHop walks X-Forwarded-For from right to left (nearest hop first)
+// and returns the first parseable hop that skip does not reject. Walking in this
+// direction is what makes the result non-spoofable: an attacker can prepend
+// arbitrary values to X-Forwarded-For, but cannot remove or reorder the hops
+// appended by the proxies on the path (including Cloudflare).
+func selectForwardedHop(xff string, skip func(string) bool) (string, bool) {
+	if strings.TrimSpace(xff) == "" {
+		return "", false
+	}
+	parts := strings.Split(xff, ",")
+	for i := len(parts) - 1; i >= 0; i-- {
+		ip, ok := extractTrustedIP(parts[i])
+		if !ok || skip(ip) {
+			continue
+		}
+		return ip, true
+	}
+	return "", false
 }
 
 func isTrustedForwardedRequest(c *gin.Context) bool {

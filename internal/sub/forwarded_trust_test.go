@@ -164,6 +164,9 @@ func TestHasForwardedHeaders(t *testing.T) {
 		{name: "forwarded host", headers: map[string]string{"X-Forwarded-Host": "sub.example.net"}, want: true},
 		{name: "forwarded proto", headers: map[string]string{"X-Forwarded-Proto": "https"}, want: true},
 		{name: "real ip", headers: map[string]string{"X-Real-IP": "10.1.2.3"}, want: true},
+		// The chain carries the client address the rate limiter keys on, so it
+		// has to put the trustedProxyCIDRs boundary in play like the others.
+		{name: "forwarded for", headers: map[string]string{"X-Forwarded-For": "10.1.2.3"}, want: true},
 	}
 
 	for _, tc := range tests {

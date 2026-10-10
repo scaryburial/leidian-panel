@@ -7,7 +7,8 @@
 Env:
   UI3344_URL   面板基址   (留空则自动探测 33441/HTTP 与 8443/HTTPS)
   UI3344_USER  登录用户名 (默认 3344)
-  UI3344_PASS  登录密码   (默认 3344)
+  UI3344_PASS  登录口令   (**必填**；面板新版把口令存在 users 表，
+               `ui3344 setting -show` 不打印它，脚本读不出来)
 """
 import http.cookiejar
 import json
@@ -15,11 +16,15 @@ import os
 import re
 import ssl
 import sys
+import urllib.error
 import urllib.parse
 import urllib.request
 
-USER = os.environ.get("UI3344_USER", "3344")
-PASS = os.environ.get("UI3344_PASS", "3344")
+DEFAULT_USER = "3344"
+USER = (os.environ.get("UI3344_USER") or DEFAULT_USER).strip()
+# 口令不再默认成 3344：口令一旦改强，按 3344 去试只会得到「登录失败」这种
+# 没有指向性的结果。缺口令直接说清补救命令。
+PASS = os.environ.get("UI3344_PASS") or ""
 
 # 面板启用域名功能后会被搬到 8443 并换用 Cloudflare Origin CA 证书，而那个证书
 # 不在系统信任库里；硬编码 http://127.0.0.1:33441 会直接失效
@@ -75,13 +80,51 @@ def post_form(path, data, csrf):
 
 
 def login():
+    if not PASS:
+        print(
+            "未提供面板口令（环境变量 UI3344_PASS 为空）。\n"
+            "  面板新版把口令存在 users 表，`ui3344 setting -show` 不打印它，脚本读不出来。\n"
+            "  请这样运行（<面板口令> 换成你自己设的那个）：\n"
+            "    UI3344_PASS='<面板口令>' python3 %s" % os.path.basename(__file__),
+            file=sys.stderr,
+        )
+        sys.exit(4)
     detect_base()
     m = re.search(r"[A-Za-z0-9_\-]{40,}", get("/csrf-token"))
     if not m:
-        print("无法获取 CSRF token", file=sys.stderr)
+        print("无法获取 CSRF token（面板没起来？基址 %s）" % BASE, file=sys.stderr)
         sys.exit(2)
     csrf = m.group(0)
-    post_form("/login", {"username": USER, "password": PASS, "_csrf": csrf}, csrf)
+    try:
+        body = post_form("/login", {"username": USER, "password": PASS, "_csrf": csrf}, csrf)
+    except urllib.error.HTTPError as e:
+        if e.code in (401, 403):
+            print(
+                "登录被面板拒绝（HTTP %d）。面板口令很可能已改强（默认 3344 早已失效）。\n"
+                "  请用当前口令重跑： UI3344_PASS='<面板口令>' python3 %s"
+                % (e.code, os.path.basename(__file__)),
+                file=sys.stderr,
+            )
+        else:
+            print("登录请求失败：HTTP %d" % e.code, file=sys.stderr)
+        sys.exit(3)
+    except Exception as e:  # noqa: BLE001
+        print("无法连接面板 %s（%s）" % (BASE, e), file=sys.stderr)
+        sys.exit(3)
+    # 面板登录失败是 HTTP 200 + {"success": false}，必须看响应体。
+    try:
+        res = json.loads(body)
+    except Exception:  # noqa: BLE001
+        res = None
+    if isinstance(res, dict) and res.get("success") is False:
+        print(
+            "登录失败：%s\n"
+            "  面板口令很可能已改强（默认 3344 早已失效），或 UI3344_USER 不是当前管理员。\n"
+            "  请用当前口令重跑： UI3344_PASS='<面板口令>' python3 %s"
+            % (res.get("msg", ""), os.path.basename(__file__)),
+            file=sys.stderr,
+        )
+        sys.exit(3)
     return csrf
 
 

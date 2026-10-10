@@ -34,6 +34,30 @@ sha256_of() {
 }
 
 WORK="$(mktemp -d)"; cd "$WORK"
+# /tmp 残留：这个工作目录里是 137MB 的安装包 + 解包后 214MB 的二进制，
+# 实测一次在线安装会在 /tmp 留下 399MB（`du -sh /tmp/tmp.*` 可复现）。
+# 必须显式清理：之前的版本没有 trap，装完就永久留在那里。
+#
+# 与「失败要能排查」不冲突：保留下来的是**日志**（journalctl -u ui3344、
+# /var/log/ui3344/、脚本自己打印的错误），大文件一律回收；确实要看现场就
+# UI3344_KEEP_TMP=1 重跑一次，脚本会打印目录路径。
+# >>> tmp-cleanup >>>
+cleanup_workdir() {
+  rc=$?
+  if [ -z "$WORK" ] || [ ! -d "$WORK" ]; then return 0; fi
+  if [ "${UI3344_KEEP_TMP:-0}" = "1" ]; then
+    echo "> 按 UI3344_KEEP_TMP=1 保留临时目录（约 400MB）：$WORK"
+    return 0
+  fi
+  cd / 2>/dev/null || true
+  rm -rf "$WORK" 2>/dev/null || true
+  if [ "$rc" -ne 0 ]; then
+    echo "> 安装失败(rc=$rc)，已回收临时目录 $WORK（约 400MB）。排查用：journalctl -u ui3344 与 /var/log/ui3344/；要保留现场请 UI3344_KEEP_TMP=1 重跑" >&2
+  fi
+}
+# <<< tmp-cleanup <<<
+trap cleanup_workdir EXIT INT TERM
+
 echo "> 下载安装包（${BASE}）…"
 dl "${BASE}/${PKG}" "${PKG}"
 dl "${BASE}/${PKG}.sha256" "${PKG}.sha256"
@@ -54,21 +78,55 @@ echo "> sha256 校验通过（${EXPECTED}）"
 echo "> 解压并安装…"
 tar xzf "${PKG}"
 cd ui3344
-bash install.sh
+# UI3344_CLEAN_PAYLOAD=1：装完后让包内 install.sh 把已经复制到 /usr/local/ui3344
+# 的大文件（二进制 214MB）从工作目录删掉；剩下的整目录由上面的 trap 回收。
+# UI3344_USER/UI3344_PASS 原样传下去（面板口令已改强时必须给，见包内提示）。
+UI3344_CLEAN_PAYLOAD=1 \
+UI3344_USER="${UI3344_USER:-3344}" \
+UI3344_PASS="${UI3344_PASS:-3344}" \
+  bash install.sh
 
-# 确保面板已就绪并创建预设协议（兼容安装包内的启动竞态）
-echo "> 确保预设协议…"
-for i in $(seq 1 30); do
-  curl -fsS "http://127.0.0.1:33441/ui3344/csrf-token" >/dev/null 2>&1 && break
-  sleep 1
-done
+# 确保面板已就绪并创建预设协议（兼容安装包内的启动竞态）。
+#
+# 这里**不能写死 http://127.0.0.1:33441**：启用域名后（或用户改过端口）
+# 面板跑在 8443/HTTPS 上，明文 HTTP 打 TLS 端口会拿到非 HTTP 字节，
+# 探测永远不成功（白等 30 秒）。http/https 各试一次，探测不到就不设
+# UI3344_URL，交给 create-inbounds.py 自己的 detect_base() 兜底。
+PANEL_BASE=""
+panel_ready() { # <base>
+  curl -kfsS --max-time 3 "$1/csrf-token" >/dev/null 2>&1
+}
+if command -v curl >/dev/null 2>&1; then
+  for _ in $(seq 1 30); do
+    for base in "http://127.0.0.1:33441/ui3344/" "https://127.0.0.1:8443/ui3344/"; do
+      if panel_ready "$base"; then PANEL_BASE="$base"; break; fi
+    done
+    [ -n "$PANEL_BASE" ] && break
+    sleep 1
+  done
+else
+  echo "! 系统缺少 curl，跳过面板地址探测（交给 create-inbounds.py 自行探测）"
+fi
+[ -n "$PANEL_BASE" ] && echo "> 面板地址：$PANEL_BASE"
 if command -v python3 >/dev/null 2>&1; then
   # 用安装包内自带的脚本（build-release.sh 已把 packaging/create-inbounds.py 打进包里），
   # 不再从 jsDelivr 的 @main 拉取——可变引用 + 以 root 执行是明确的供应链风险。
   SCRIPT="$(pwd)/create-inbounds.py"
   [ -f "$SCRIPT" ] || SCRIPT="/usr/local/ui3344/create-inbounds.py"
   if [ -f "$SCRIPT" ]; then
-    python3 "$SCRIPT" || echo "! 预设创建失败，可稍后手动运行 create-inbounds.py"
+    run_presets() {
+      if [ -n "$PANEL_BASE" ]; then
+        UI3344_URL="${PANEL_BASE%/}" UI3344_USER="${UI3344_USER:-3344}" UI3344_PASS="${UI3344_PASS:-3344}" \
+          python3 "$SCRIPT"
+      else
+        UI3344_USER="${UI3344_USER:-3344}" UI3344_PASS="${UI3344_PASS:-3344}" python3 "$SCRIPT"
+      fi
+    }
+    run_presets || { sleep 3; run_presets; } || {
+      echo "! 预设创建失败。常见原因：面板管理员口令已改强（不再是默认 3344）。"
+      echo "  请在服务器上补跑（把 <面板口令> 换成你自己设的口令，脚本不会打印也不会保存它）："
+      echo "    UI3344_PASS='<面板口令>' python3 /usr/local/ui3344/create-inbounds.py"
+    }
   else
     echo "! 未找到 create-inbounds.py，跳过预设创建"
   fi
