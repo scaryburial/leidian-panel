@@ -2,11 +2,11 @@
 """在面板尚未升级到 v2.3 之前，先把客户端安装包对外提供出去。
 
 面板二进制里的 /clients/ 路由要重新编译才会出现；在那之前，用这个极简静态
-服务把 <数据目录>/clients 挂到 Cloudflare 可代理的 HTTP 端口（默认 2052）上，
+服务把 <数据目录>/clients 挂到 Cloudflare 可代理的 HTTP 端口（默认 8880）上，
 订阅页下载按钮将来指向的也是同一批文件，升级后可直接停用本服务。
 
 用法：
-  ui3344-clients-server [--port 2052] [--dir /etc/ui3344/clients]
+  ui3344-clients-server [--port 8880] [--dir /etc/ui3344/clients]
 """
 import argparse
 import html
@@ -159,7 +159,7 @@ class Handler(SimpleHTTPRequestHandler):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--port", type=int, default=2052)
+    parser.add_argument("--port", type=int, default=8880)
     parser.add_argument("--dir", default="/etc/ui3344/clients")
     parser.add_argument("--bind", default="0.0.0.0")
     args = parser.parse_args()
