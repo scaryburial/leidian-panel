@@ -122,6 +122,7 @@ var defaultValueMap = map[string]string{
 	"subSupportUrl":               "",
 	"subProfileUrl":               "",
 	"subAnnounce":                 "",
+	"clientDownloadBase":          "",
 	"subEnableRouting":            "false",
 	"subRoutingRules":             "",
 	"subHideSettings":             "false",
@@ -984,6 +985,13 @@ func (s *SettingService) GetSubProfileUrl() (string, error) {
 
 func (s *SettingService) GetSubAnnounce() (string, error) {
 	return s.getString("subAnnounce")
+}
+
+// GetClientDownloadBase returns the URL prefix the subscription page builds
+// installer links from. Empty means the panel serves the mirrored installers
+// itself, from the subscription server's /clients/ path.
+func (s *SettingService) GetClientDownloadBase() (string, error) {
+	return s.getString("clientDownloadBase")
 }
 
 func (s *SettingService) GetSubEnableRouting() (bool, error) {

@@ -22,6 +22,17 @@ interface SubPageData {
   downloadByte?: string | number;
   uploadByte?: string | number;
   usedByte?: string | number;
+  clientDownloads?: SubPageClientDownload[];
+}
+
+interface SubPageClientDownload {
+  key: string;
+  label: string;
+  platform: 'android' | 'ios';
+  version?: string;
+  file?: string;
+  official?: string;
+  url: string;
 }
 
 interface Window {

@@ -389,6 +389,9 @@ func (a *SUBController) initRouter(g *gin.RouterGroup) {
 		}
 	}
 	a.registerCardKeyRoutes(g)
+	gClients := g.Group(clientDownloadPath)
+	gClients.GET(":file", a.serveClientFile)
+	gClients.HEAD(":file", a.serveClientFile)
 }
 
 // cardKeyParamResolver rewrites the :subid route parameter of a card-key
@@ -780,6 +783,8 @@ func (a *SUBController) subPageContext(page PageData) map[string]any {
 		datepicker = "gregorian"
 	}
 
+	downloadBase, _ := a.settingService.GetClientDownloadBase()
+
 	return map[string]any{
 		"sId":           page.SId,
 		"enabled":       page.Enabled,
@@ -803,6 +808,7 @@ func (a *SUBController) subPageContext(page PageData) map[string]any {
 		"emails":        page.Emails,
 		"datepicker":    datepicker,
 		"announce":      page.SubAnnounce,
+		"clientDownloads": a.clientDownloadItems(downloadBase),
 	}
 }
 

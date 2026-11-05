@@ -129,3 +129,27 @@
 .toolbar-btn .anticon {
   font-size: 18px;
 }
+
+.client-download-section {
+  margin-top: 20px;
+}
+
+.client-download-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.client-download-label {
+  min-width: 84px;
+  font-weight: 600;
+  opacity: 0.85;
+}
+
+.client-download-hint {
+  font-size: 12px;
+  opacity: 0.6;
+  margin-top: 4px;
+}

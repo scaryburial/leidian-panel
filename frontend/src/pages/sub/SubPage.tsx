@@ -49,6 +49,9 @@ import './SubPage.css';
 const QR_SIZE = 240;
 
 const subData = window.__SUB_PAGE_DATA__ || {};
+const clientDownloads: SubPageClientDownload[] = Array.isArray(subData.clientDownloads)
+  ? subData.clientDownloads
+  : [];
 
 const sId = subData.sId || '';
 const enabled = !!subData.enabled;
@@ -234,6 +237,31 @@ export default function SubPage() {
       { key: 'ios-incy', label: 'Incy', onClick: () => open(incyUrl) },
     ],
     [copy, open, shadowrocketUrl, v2boxUrl, streisandUrl, happUrl, incyUrl],
+  );
+
+  const androidDownloads = useMemo(
+    () => clientDownloads.filter((d) => d.platform === 'android'),
+    [],
+  );
+  const iosDownloads = useMemo(() => clientDownloads.filter((d) => d.platform === 'ios'), []);
+
+  const renderDownloadRow = (items: SubPageClientDownload[]) => (
+    <Space size={8} wrap>
+      {items.map((item) => (
+        <Button
+          key={item.key}
+          size="middle"
+          href={item.url}
+          target="_blank"
+          rel="noopener noreferrer"
+          icon={<DownloadOutlined />}
+        >
+          {item.label}
+          {item.version ? <Tag style={{ marginInlineStart: 6 }}>{item.version}</Tag> : null}
+          {!item.file ? <Tag color="default">商店</Tag> : null}
+        </Button>
+      ))}
+    </Space>
   );
 
   const langMenuItems = useMemo(
@@ -609,6 +637,33 @@ export default function SubPage() {
                           </Fragment>
                         );
                       })}
+                    </div>
+                  </>
+                )}
+
+                {clientDownloads.length > 0 && (
+                  <>
+                    <Divider>客户端下载</Divider>
+                    <div className="client-download-section">
+                      {androidDownloads.length > 0 && (
+                        <div className="client-download-row">
+                          <span className="client-download-label">
+                            <AndroidOutlined /> Android
+                          </span>
+                          {renderDownloadRow(androidDownloads)}
+                        </div>
+                      )}
+                      {iosDownloads.length > 0 && (
+                        <div className="client-download-row">
+                          <span className="client-download-label">
+                            <AppleOutlined /> iOS
+                          </span>
+                          {renderDownloadRow(iosDownloads)}
+                        </div>
+                      )}
+                      <div className="client-download-hint">
+                        没有客户端？点上面的按钮下载安装，标「商店」的需在应用商店搜同名应用。
+                      </div>
                     </div>
                   </>
                 )}

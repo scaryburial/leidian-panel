@@ -87,19 +87,55 @@ op = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(cj),
                                  urllib.request.HTTPSHandler(context=_ssl_ctx))
 
 
+def _db_panel_address():
+    """从面板数据库读出真实的监听端口与安全入口。
+
+    这两项安装时都可能是随机的，写死 /ui3344 与 33441 会让探测必然失败；
+    探测失败后代码会退回候选地址[0] 去登录，报出来的却是「取不到 CSRF token」，
+    看上去像面板没起来，实际只是地址猜错了。
+    """
+    import sqlite3
+    for db in (os.environ.get("XUI_DB_PATH"), "/etc/ui3344/ui3344.db"):
+        if not db or not os.path.exists(db):
+            continue
+        try:
+            con = sqlite3.connect("file:%s?mode=ro" % db, uri=True)
+            try:
+                rows = dict(con.execute("select key, value from settings"))
+            finally:
+                con.close()
+        except Exception:  # noqa: BLE001
+            continue
+        port = str(rows.get("webPort") or "").strip()
+        path = str(rows.get("webBasePath") or "").strip().strip("/")
+        if port:
+            return port, path
+    return "", ""
+
+
 def detect_base():
-    """确定面板基址：优先 UI3344_URL，否则依次探测候选地址。"""
+    """确定面板基址：优先 UI3344_URL，其次按数据库里的端口/入口探测。"""
     global BASE
     if BASE:
         return BASE
-    for cand in BASE_CANDIDATES:
+
+    candidates = []
+    port, path = _db_panel_address()
+    if port:
+        suffix = ("/" + path) if path else ""
+        # 启用域名功能后端口会变 8443 且换成 TLS，所以两种协议都试。
+        candidates.append("https://127.0.0.1:%s%s" % (port, suffix))
+        candidates.append("http://127.0.0.1:%s%s" % (port, suffix))
+    candidates.extend(BASE_CANDIDATES)
+
+    for cand in candidates:
         try:
             op.open(cand + "/csrf-token", timeout=5).read()
             BASE = cand
             return BASE
         except Exception:  # noqa: BLE001
             continue
-    BASE = BASE_CANDIDATES[0]
+    BASE = candidates[0]
     return BASE
 
 
