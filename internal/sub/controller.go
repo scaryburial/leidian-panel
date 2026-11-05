@@ -779,35 +779,34 @@ func (a *SUBController) serveSubPage(c *gin.Context, basePath string, page PageD
 // consumers match the rest of the panel without a round-trip.
 func (a *SUBController) subPageContext(page PageData) map[string]any {
 	datepicker, _ := a.settingService.GetDatepicker()
+	downloadBase, _ := a.settingService.GetClientDownloadBase()
 	if datepicker == "" {
 		datepicker = "gregorian"
 	}
 
-	downloadBase, _ := a.settingService.GetClientDownloadBase()
-
 	return map[string]any{
-		"sId":           page.SId,
-		"enabled":       page.Enabled,
-		"isOnline":      page.IsOnline,
-		"download":      page.Download,
-		"upload":        page.Upload,
-		"total":         page.Total,
-		"used":          page.Used,
-		"remained":      page.Remained,
-		"expire":        page.Expire,
-		"lastOnline":    page.LastOnline,
-		"downloadByte":  page.DownloadByte,
-		"uploadByte":    page.UploadByte,
-		"totalByte":     page.TotalByte,
-		"subUrl":        page.SubUrl,
-		"subJsonUrl":    page.SubJsonUrl,
-		"subClashUrl":   page.SubClashUrl,
-		"subTitle":      page.SubTitle,
-		"subSupportUrl": page.SubSupportUrl,
-		"links":         page.Result,
-		"emails":        page.Emails,
-		"datepicker":    datepicker,
-		"announce":      page.SubAnnounce,
+		"sId":             page.SId,
+		"enabled":         page.Enabled,
+		"isOnline":        page.IsOnline,
+		"download":        page.Download,
+		"upload":          page.Upload,
+		"total":           page.Total,
+		"used":            page.Used,
+		"remained":        page.Remained,
+		"expire":          page.Expire,
+		"lastOnline":      page.LastOnline,
+		"downloadByte":    page.DownloadByte,
+		"uploadByte":      page.UploadByte,
+		"totalByte":       page.TotalByte,
+		"subUrl":          page.SubUrl,
+		"subJsonUrl":      page.SubJsonUrl,
+		"subClashUrl":     page.SubClashUrl,
+		"subTitle":        page.SubTitle,
+		"subSupportUrl":   page.SubSupportUrl,
+		"links":           page.Result,
+		"emails":          page.Emails,
+		"datepicker":      datepicker,
+		"announce":        page.SubAnnounce,
 		"clientDownloads": a.clientDownloadItems(downloadBase),
 	}
 }
