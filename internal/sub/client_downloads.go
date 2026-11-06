@@ -45,7 +45,17 @@ type clientDownload struct {
 // clientCatalog is the single source of truth for the download list. Order
 // here is the order rendered on the page: open-source mirrors first, then the
 // store-only clients.
+//
+// 安装包体积直接决定下载耗时（手机到 Cloudflare 边缘往往只有几十 KB/s），
+// 所以同一款 App 的按架构分包要排在通用包前面：arm64-v8a 是近几年的手机
+// 全部支持的架构，体积不到通用包的一半。
 var clientCatalog = []clientDownload{
+	{
+		Key: "v2rayng-arm64", Label: "V2RayNG 精简", Platform: "android",
+		Version:  "2.3.15",
+		File:     "v2rayng-arm64.apk",
+		Official: "https://github.com/2dust/v2rayNG/releases",
+	},
 	{
 		Key: "v2rayng", Label: "V2RayNG", Platform: "android",
 		Version:  "2.3.15",
